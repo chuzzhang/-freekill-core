@@ -225,6 +225,8 @@ function ReqResponseCard:selectCard(cid, data)
     self.scene:update("SpecialSkills", "1", { skills = sp_skills })
   else
     self.selected_card = nil
+    self:setPrompt(self.original_prompt)
+    self.skill_name = nil
     self.scene:update("SpecialSkills", "1", { skills = {} })
   end
 end

@@ -8,6 +8,7 @@
 ---@field public mute_card boolean? @ 是否不播放卡牌特效和语音
 ---@field public click_count? boolean @ 是否在点击按钮瞬间就计数并播放特效和语音
 ---@field public include_equip? boolean @ 选牌时是否展开装备区
+---@field public autoViewAs? boolean @ 点选卡牌使用或打出时是否自动视为
 local ViewAsSkill = UsableSkill:subclass("ViewAsSkill")
 
 function ViewAsSkill:initialize(name, frequency)
@@ -161,14 +162,16 @@ end
 
 --- 空闲时间点内是否可以使用转化技
 ---@param player Player @ 想发动技能的角色
-function ViewAsSkill:enabledAtPlay(player)
+---@param cid? integer @ autoViewAs时才会传入的参数，为当前选择的卡牌
+function ViewAsSkill:enabledAtPlay(player, cid)
   return self:isEffectable(player)
 end
 
 --- 需要响应时是否可以使用转化技
 ---@param player Player @ 想发动技能的角色
 ---@param cardResponsing? boolean @ 是否为打出事件
-function ViewAsSkill:enabledAtResponse(player, cardResponsing)
+---@param cid? integer @ autoViewAs时才会传入的参数，为当前选择的卡牌
+function ViewAsSkill:enabledAtResponse(player, cardResponsing, cid)
   return self:isEffectable(player)
 end
 
