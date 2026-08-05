@@ -13,7 +13,7 @@ QtObject {
   property real winY
   property real winWidth
   property real winHeight
-  property real winScale
+  property real winScale: 1.0
   property var conf: ({})
   property string lastLoginServer
   property list<string> preferredButtons: []
