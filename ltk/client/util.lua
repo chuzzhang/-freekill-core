@@ -544,11 +544,9 @@ end
 function M:getSkinByName(general, name)
   local skin_data =  Fk:getSkinByName(general, name)
   if (skin_data or {}).name then
-    return {
-      name = skin_data.name,
-      path = skin_data.path,
-      url = skin_data.path .. skin_data.name
-    }
+    local _skin = table.simpleClone(skin_data)
+    _skin.url = skin_data.path .. skin_data.name
+    return _skin
   end
   return
 end

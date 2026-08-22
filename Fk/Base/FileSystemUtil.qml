@@ -21,6 +21,16 @@ QtObject {
     return ret;
   }
 
+  // 只有文件存在才会存到cache中
+  function existsFile(path) {
+    if (path in existsCache) {
+      return existsCache[path];
+    }
+    const ret = Backend.exists(path);
+    if (ret) existsCache[path] = ret;
+    return ret;
+  }
+
   function isDir(path) {
     return Backend.isDir(path);
   }
@@ -37,14 +47,14 @@ QtObject {
     const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
     const dot = path.lastIndexOf(".");
     if (dot > slash + 1) {
-      return exists(path) ? path : "";
+      return existsFile(path) ? path : "";
     }
 
-    if (exists(path)) return path;
+    if (existsFile(path)) return path;
 
     const exts = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp", ".avif", ".ico"];
     for (const ext of exts) {
-      if (exists(path + ext)) return path + ext;
+      if (existsFile(path + ext)) return path + ext;
     }
     return "";
   }
