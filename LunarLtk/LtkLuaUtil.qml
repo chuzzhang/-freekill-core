@@ -497,7 +497,7 @@ QtObject {
 
   function isSkeletonSkin(general, name) {
     if (!general || !name) return false;
-    return getSkinByName(general, name).is_skel ?? false
+    return getSkinByName(general, name)?.is_skel ?? false
   }
 
   // 获得完整的皮肤地址，如果为远程链接则下载到assets文件夹
