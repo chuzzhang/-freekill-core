@@ -177,7 +177,10 @@ end
 ---@return SkillUseData @ 技能发动数据
 function ButtonSkill:handleCostData(player, use_spec, extra_data)
   local use_data = SkillUseData:new(use_spec)
-  use_data.cost_data = self:onCost(player, use_spec, extra_data) or {}
+  use_data.cost_data = self:onCost(player, use_spec, extra_data)
+  if type(use_data.cost_data) ~= "table" then
+    use_data.cost_data = {}
+  end
   if use_data.cost_data.from then
     use_data.from = use_data.cost_data.from
   end
