@@ -21,6 +21,7 @@
 ---@field body_attack_anim? string
 ---@field body_special_anim? string
 ---@field render_scale? number @ 渲染比例，比较大的或组件很多的骨骼适当调低一点这个
+---@field static_bg? string @ 如果使用静态图片作为背景，则在这里输入静态图片名（带后缀），注意：files里也得有这个文件
 
 --加载后的skin保存方式，一个武将的一个skin通过SkinContent类保存
 ---@class SkinContent
@@ -33,7 +34,7 @@
 ---@field is_skel boolean
 ---@field path string
 ---@field files string[]
----@field bg string
+---@field bg? string
 ---@field body string
 ---@field extra_data? SkeletonExtraDataSpec
 
@@ -45,7 +46,7 @@
 ---@field enabled_generals string[]
 ---@field skin_name string
 ---@field files string[]
----@field bg string
+---@field bg? string
 ---@field body string
 ---@field extra_data? SkeletonExtraDataSpec
 

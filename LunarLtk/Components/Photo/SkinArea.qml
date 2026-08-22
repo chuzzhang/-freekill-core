@@ -101,21 +101,51 @@ Item {
     id: skeletonAnim
     Item {
       anchors.fill: parent
-      SkeletonAnimation {
-        id: skelBg
-        atlasFile: root.skelData.path + root.skelData.atlasBgFile
-        skeletonDataFile: root.skelData.path + root.skelData.skelBgFile
-        skeletonScale: 0.75
-        spineVersion: SpineVersion.Auto
-        premultipliedAlapha: false
-        x: root.width * root.skelData.bgXOffset
-        y: root.height * root.skelData.bgYOffset
-        scale: root.skelData.bodyScale * root.height / 175 / 0.75
 
-        Component.onCompleted: {
-          skelBg.setAnimation(0, root.skelData.bgNormalAnim, true);
+      Loader {
+        id: bgLoader
+        anchors.fill: parent
+        sourceComponent: {
+          if (root.skelData.imgBgPath) {
+            return skelStaticBg
+          } else if (root.skelData.atlasBgFile) {
+            return skelBg
+          }
         }
       }
+
+      Component{
+        id: skelStaticBg
+        Image {
+          anchors.fill: parent
+          fillMode: Image.PreserveAspectCrop
+          source: root.skelData.path + root.skelData.staticBg
+        }
+      }
+
+      Component {
+        id: skelBg
+        SkeletonAnimation {
+          atlasFile: root.skelData.path + root.skelData.atlasBgFile
+          skeletonDataFile: root.skelData.path + root.skelData.skelBgFile
+          skeletonScale: root.skelData.renderScale
+          spineVersion: SpineVersion.Auto
+          premultipliedAlapha: false
+          x: root.width * root.skelData.bgXOffset
+          y: root.height * root.skelData.bgYOffset
+          scale: root.skelData.bodyScale * root.height / root.skelData.renderScale / 175
+
+          Component.onCompleted: {
+            if (root.skelData.bgShownAnim && root.enabledShown) {
+              setAnimation(0, root.skelData.bgShownAnim, false);
+              addAnimation(0, root.skelData.bgNormalAnim, true);
+            } else {
+              setAnimation(0, root.skelData.bgNormalAnim, true)
+            }
+          }
+        }
+      }
+
       SkeletonAnimation {
         id: skel
         atlasFile: root.skelData.path + root.skelData.atlasBodyFile
@@ -129,10 +159,10 @@ Item {
 
         Component.onCompleted: {
           if (root.skelData.bodyShownAnim && root.enabledShown) {
-            skel.setAnimation(0, root.skelData.bodyShownAnim, false);
-            skel.addAnimation(0, root.skelData.bodyNormalAnim, true);
+            setAnimation(0, root.skelData.bodyShownAnim, false);
+            addAnimation(0, root.skelData.bodyNormalAnim, true);
           } else {
-            skel.setAnimation(0, root.skelData.bodyNormalAnim, true)
+            setAnimation(0, root.skelData.bodyNormalAnim, true)
           }
         }
       }
