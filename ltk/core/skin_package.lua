@@ -20,6 +20,7 @@
 ---@field body_normal_anim? string
 ---@field body_attack_anim? string
 ---@field body_special_anim? string
+---@field render_scale? number @ 渲染比例，比较大的或组件很多的骨骼适当调低一点这个
 
 --加载后的skin保存方式，一个武将的一个skin通过SkinContent类保存
 ---@class SkinContent

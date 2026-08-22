@@ -565,6 +565,7 @@ QtObject {
         bodyNormalAnim: extraData.body_normal_anim ?? (extraData.normal_anim ?? "DaiJi"),
         bodyAttackAnim: extraData.body_attack_anim ?? (extraData.special_anim ?? ""),
         bodySpecialAnim: extraData.body_special_anim ?? (extraData.shown_anim ?? ""),
+        renderScale: extraData.render_scale ?? 1
       }
     }
     return

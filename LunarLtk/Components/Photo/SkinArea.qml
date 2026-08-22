@@ -120,12 +120,12 @@ Item {
         id: skel
         atlasFile: root.skelData.path + root.skelData.atlasBodyFile
         skeletonDataFile: root.skelData.path + root.skelData.skelBodyFile
-        skeletonScale: 0.75
+        skeletonScale: root.skelData.renderScale
         spineVersion: SpineVersion.Auto
         premultipliedAlapha: false
         x: root.width * root.skelData.bodyXOffset
         y: root.height * root.skelData.bodyYOffset
-        scale: root.skelData.bodyScale * root.height / 175 / 0.75
+        scale: root.skelData.bodyScale * root.height / root.skelData.renderScale / 175
 
         Component.onCompleted: {
           if (root.skelData.bodyShownAnim && root.enabledShown) {
