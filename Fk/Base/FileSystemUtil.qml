@@ -10,6 +10,21 @@ QtObject {
     return url.replace(Cpp.os === "Win" ? "file:///" : "file://", "");
   }
 
+  function convertPathToUrl(path) {
+    // 确保路径使用正斜杠
+    path = path.replace(/\\/g, "/");
+    if (Cpp.os === "Win") {
+      if (!path.startsWith("file:///")) {
+        return "file:///" + path;
+      }
+    } else {
+      if (!path.startsWith("file://")) {
+        return "file://" + path;
+      }
+    }
+    return path;
+}
+
   // exists是一次stat操作，属于相当耗时的系统调用
   // 这里简单加一层cache，显然这个cache不会清理，懒得管了
   function exists(path) {
