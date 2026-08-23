@@ -59,6 +59,8 @@ Fk:loadTranslationTable {
   ["help: Enable Super Drag"] = "将牌拖出手牌区使用，拖入目标即可选择目标或取消选择目标",
   ["Hide Screen Name"] = "隐藏玩家名",
   ["help: Hide Screen Name"] = "在大厅和游戏中隐藏所有玩家名",
+  ["Ban Change Skins"] = "隐藏所有换肤",
+  ["help: Ban Change Skins"] = "不再显示其他玩家以及自己的皮肤",
 
   ["Ban General Settings"] = "禁将",
   ["Set as Avatar"] = "设为头像",

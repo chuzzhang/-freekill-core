@@ -333,6 +333,7 @@ QtObject {
   }
 
   function changeSkin(sender, data) {
+    if (Config.banChangeSkin) return;
     const photoModel = getPhoto(Number(data[0]));
     const skinData = photoModel.luaPlayer.skins;
 
