@@ -92,7 +92,7 @@ GraphicsBox {
       anchors.centerIn: parent
       text: Lua.tr("OK")
       enabled: root.dataModel.feasible
-      onClicked: root.dataModel.shuffleAndOk()
+      onClicked: root.dataModel.accepted()
     }
 
     MetroButton {

@@ -23,13 +23,10 @@ GraphicsBox {
 
   Connections {
     target: root.dataModel
-    function onGeneralChanged(oldName, newName) {
-      for (let i = 0; i < generalCardList.count; i++) {
-        const item = generalCardList.itemAt(i);
-        if (item.modelData === oldName) {
-          item.modelData = newName;
-        }
-      }
+    function onGeneralChanged(idx, newName) {
+      const item = generalCardList.itemAt(idx);
+      item.dataModel = root.dataModel.generalDict[idx];
+      arrangeCards();
     }
   }
 
@@ -130,8 +127,10 @@ GraphicsBox {
           enabled: root.dataModel.canConvert
           text: Lua.tr("Same General Convert")
           onClicked: {
-            const models = root.dataModel.generals.map(name => root.dataModel.generalDict[name]);
-            roomScene.showInfoPopup(Qt.createComponent("LunarLtk.Pages.InfoPopups", "SameConvert"), { dataModel: root.dataModel });
+            roomScene.showInfoPopup(
+              Qt.createComponent("LunarLtk.Pages.InfoPopups", "SameConvert"),
+              { dataModel: root.dataModel }
+            );
           }
         }
 
@@ -147,7 +146,7 @@ GraphicsBox {
 
         MetroButton {
           id: detailBtn
-          enabled: !!root.dataModel.result.length
+          enabled: root.dataModel.result?.length > 0
           text: Lua.tr("Show General Detail")
           onClicked: roomScene.showInfoPopup(
             Qt.createComponent("LunarLtk.Pages.InfoPopups", "GeneralDetail"),
@@ -165,11 +164,11 @@ GraphicsBox {
     GeneralCardItem {
       required property string modelData
       required property int index
-      dataModel: root.dataModel.generalDict[modelData]
+      dataModel: root.dataModel.generalDict[index]
       selectable: {
-        const result = root.dataModel.result;
+        const result = root.dataModel.resultInt?.map(e => Number(e));
         if (result) {
-          return result.includes(modelData) || root.dataModel.generalFilter(modelData) || false;
+          return result.includes(index) || root.dataModel.generalFilter(index);
         }
         return false;
       }
@@ -177,14 +176,14 @@ GraphicsBox {
 
       onClicked: {
         if (!selectable) return;
-        root.dataModel.selectGeneralCard(modelData);
+        root.dataModel.selectGeneralCard(index);
         root.arrangeCards();
       }
 
       onRightClicked: {
         if (Lua.client.getSettings("enableFreeAssign")) {
           roomScene.showInfoPopup(Qt.createComponent("LunarLtk.Pages.InfoPopups", "FreeAssign"),
-            { dataModel: root.dataModel, oldName: dataModel.name });
+            { dataModel: root.dataModel, index: index });
         }
       }
 
@@ -201,15 +200,15 @@ GraphicsBox {
         root.arrangeCards();
       }
       onReleased: {
-        root.updateCardDragging(this);
+        root.updateCardDragging(index);
         root.draggingCard = null;
         root.arrangeCards();
       }
     }
   }
 
-  function updateCardDragging(item) {
-    const name = item.dataModel.name;
+  function updateCardDragging(index) {
+    const item = generalCardList.itemAt(index);
     if (item.y > splitLine.y && item.selectable) {
       let i, magnet, pos, itemdiff;
       let diff = 17308, idx = -1;
@@ -223,12 +222,12 @@ GraphicsBox {
         };
       }
       if (diff < 50) {
-        root.dataModel.moveGeneral(name, true, idx);
+        root.dataModel.moveGeneral(index, true, idx);
       } else {
-        root.dataModel.moveGeneral(name, false);
+        root.dataModel.moveGeneral(index, false);
       }
     } else {
-      root.dataModel.moveGeneral(name, false);
+      root.dataModel.moveGeneral(index, false);
     }
   }
 
@@ -245,7 +244,7 @@ GraphicsBox {
         item.z = 999;
         continue;
       }
-      const resultIdx = root.dataModel.result.findIndex(e => e === item.dataModel.name);
+      const resultIdx = root.dataModel.resultInt.findIndex(e => Number(e) === i);
       if (resultIdx !== -1) {
         magnet = resultList.itemAt(resultIdx);
         pos = root.mapFromItem(resultArea, magnet.x, magnet.y);
@@ -275,8 +274,8 @@ GraphicsBox {
     let item, i;
 
     // 国战小标记
-    const result = root.dataModel.result ?? [];
-    const selectedItem = result.slice(0, 2).map(name => root.dataModel.generalDict[name]?.dataModel);
+    const result = root.dataModel.resultInt ?? [];
+    const selectedItem = result.slice(0, 2).map(idx => root.dataModel.generalDict[idx]?.dataModel);
 
     // 主副将认定
     for (i = 0; i < generalCardList.count; i++) {

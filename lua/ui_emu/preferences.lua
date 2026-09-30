@@ -57,6 +57,7 @@ W.toQmlData = function(spec, settings)
     end
   end
 
+  ret._settingsKey = spec._settingsKey -- 缺啥不能缺_settingsKey
   return ret
 end
 

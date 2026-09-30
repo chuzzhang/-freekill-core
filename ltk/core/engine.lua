@@ -33,7 +33,7 @@ local baseEngine = require "core.engine"
 ---@field public card_tips table<string, CardTipSpec> @ 选择卡牌提示对应表
 ---@field public target_tips table<string, TargetTipSpec> @ 选择目标提示对应表
 ---@field public choose_general_rule table<string, ChooseGeneralSpec> @ 选将框操作方法表
----@field public skin_packages table<string, string[]> @ Skins
+---@field public skin_packages table<string, SkinContent[]> @ Skins
 ---@field public personal_marks table<string, PersonalMarkSpec> @ PersonalMark
 local Engine = baseEngine:subclass("Engine")
 Engine:include(modManager)
@@ -380,12 +380,26 @@ end
 ---@param name string @ 牌名
 ---@param suit? Suit @ 花色
 ---@param number? integer @ 点数
+---@param skill_name? string @ 技能名
+---@param subcard? integer|integer[] @ 牌的子牌
 ---@return Card
-function Engine:cloneCard(name, suit, number)
+function Engine:cloneCard(name, suit, number, skill_name, subcard)
   local cd = self.all_card_types[name]
   assert(cd, string.format("Attempt to clone a card that not added to engine: name=%s", name))
   local ret = cd:clone(suit, number)
   ret.package = cd.package
+  if skill_name then
+    ret.skillNames = { skill_name }
+  end
+  if subcard then
+    if type(subcard) == "number" then
+      ret:addSubcard(subcard)
+    else ---@cast subcard integer[]
+      ret:addSubcards(subcard)
+    end
+    if suit then ret.suit = suit end
+    if number then ret.number = number end
+  end
   return ret
 end
 
@@ -506,8 +520,9 @@ end
 ---@param generalPool? General[] @ 选择的范围，默认是已经启用的所有武将
 ---@param except? string[] @ 特别要排除掉的武将名列表，默认是空表
 ---@param filter? fun(g: General): boolean? @ 可选参数，若这个函数返回true的话这个武将被排除在外
+---@param includeSameName? boolean @ 可选参数，是否置入全部同名武将
 ---@return General[] @ 随机选出的武将列表
-function Engine:getGeneralsRandomly(num, generalPool, except, filter)
+function Engine:getGeneralsRandomly(num, generalPool, except, filter, includeSameName)
   if filter then
     assert(type(filter) == "function")
   end
@@ -521,10 +536,10 @@ function Engine:getGeneralsRandomly(num, generalPool, except, filter)
   local availableGenerals = {}
   for _, general in pairs(generalPool) do
     if not table.contains(except, general.name) and not (filter and filter(general)) then
-      if (not general.hidden and not general.total_hidden) and
-        #table.filter(availableGenerals, function(g)
+      if not (general.hidden or general.total_hidden or
+        (not includeSameName and table.find(availableGenerals, function(g)
         return g.trueName == general.trueName
-      end) == 0 then
+      end))) then
         table.insert(availableGenerals, general)
       end
     end
@@ -538,6 +553,76 @@ function Engine:getGeneralsRandomly(num, generalPool, except, filter)
     return RoomInstance:tableRandomPick(availableGenerals, num)
   end
   return table.random(availableGenerals, num)
+end
+
+---获取一个武将所需要选择的势力，不做选择合法性判断
+---@param general string
+---@return string[]
+function Engine:getKingdomsNeedToChoose(general)
+  local arr = {}
+  local g = self.generals[general]
+  if g.subkingdom ~= nil then
+    arr = { g.kingdom }
+    table.insertIfNeed(arr, g.subkingdom)
+  end
+  for _, v in ipairs(self:getKingdomMap(g.kingdom) or {}) do
+    table.insertIfNeed(arr, v)
+  end
+  return arr
+end
+
+---@param general string
+---@param deputy string
+---@param enabled_kingdoms string[]
+---@return string[]
+function Engine:getKingdomInHegemony(general, deputy, enabled_kingdoms)
+  local g = self.generals[general]
+  local d = self.generals[deputy or ""]
+  if d then
+    local arr = {}
+    if g.kingdom == "wild" then
+      if d.subkingdom then
+        arr = { d.kingdom, d.subkingdom }
+      else
+        arr = { d.kingdom }
+      end
+    else
+      if g.kingdom == d.kingdom or g.kingdom == (d.subkingdom or " ") then
+        table.insertIfNeed(arr, g.kingdom)
+      end
+      if g.subkingdom == d.kingdom or g.subkingdom == (d.subkingdom or " ") then
+        table.insertIfNeed(arr, g.subkingdom)
+      end
+    end
+
+    if enabled_kingdoms and #arr > 0 then
+      for _, v in ipairs(table.simpleClone(arr)) do
+        if not table.contains(enabled_kingdoms, v) then
+          arr = {}
+        end
+      end
+    end
+    return arr
+  end
+  return {}
+end
+
+---是否能在国战中组一对
+---@param general string
+---@param deputy string
+---@param enabled_kingdoms string[]
+function Engine:canMatchInHegemony(general, deputy, enabled_kingdoms)
+  local g = self.generals[general]
+  local d = self.generals[deputy]
+  if g and d and general ~= deputy then
+    if g.kingdom == "wild" then return true end
+    if d.kingdom == "wild" then return false end
+    local arr = {g.kingdom, g.subkingdom or ""}
+    return (table.contains(arr, d.kingdom) and table.contains(enabled_kingdoms, d.kingdom))
+    or (table.contains(arr, d.subkingdom or " ") and table.contains(enabled_kingdoms, d.subkingdom or " "))
+    or general == "mouxusheng" or deputy == "mouxusheng" --测试用
+  end
+  return false
 end
 
 --- 获取已经启用的所有武将的列表。
@@ -662,8 +747,27 @@ function Engine:filterCard(id, player)
   end
 end
 
+---@return table<string, SkinContent>
 function Engine:getSkinsByGeneral(general)
   return self.skin_packages[general] or {}
+end
+
+---@return SkinContent
+---@param general string
+---@param name string
+function Engine:getSkinByName(general, name)
+  return self:getSkinsByGeneral(general)[name]
+end
+
+---@return string[]
+function Engine:getSkinNamesByGeneral(general)
+  local arr = {}
+  if self.skin_packages[general] then
+    for k, _ in pairs(self.skin_packages[general]) do
+      table.insert(arr, k)
+    end
+  end
+  return arr
 end
 
 ---@param mark_spec PersonalMarkSpec

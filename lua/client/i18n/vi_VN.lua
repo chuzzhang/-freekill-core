@@ -611,8 +611,8 @@ Fk:loadTranslationTable({
   -- damage, heal and lose HP
   ["#Damage"] = "%to đã gây %arg %arg2 sát thương cho %from",
   ["#DamageWithNoFrom"] = "%from đã chịu %arg %arg2 sát thương",
-  ["#LoseHP"] = "%from đã mất %arg máu",
-  ["#HealHP"] = "%from đã hồi %arg máu",
+  ["#LoseHP"] = "%from đã mất %arg máu %arg2",
+  ["#HealHP"] = "%from đã hồi %arg máu %arg2",
   ["#ShowHPAndMaxHP"] = "%from hiện có %arg máu (máu tối đa = %arg2)",
   ["#LoseMaxHP"] = "%from đã mất %arg máu tối đa",
   ["#HealMaxHP"] = "%from đã hồi %arg máu tối đa",

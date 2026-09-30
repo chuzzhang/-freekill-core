@@ -23,6 +23,7 @@ local CardItem = (require 'ui_emu.common').CardItem
 ---@field public pendings integer[] 卡牌id数组
 ---@field public selected_targets integer[] 选择的目标
 ---@field public expanded_piles { [string]: integer[] } 用于展开/收起
+---@field public visible_pile integer[]
 ---@field public original_prompt string 最开始的提示信息；这种涉及技能按钮的需要这样一下
 local ReqActiveSkill = RequestHandler:subclass("ReqActiveSkill")
 
@@ -44,9 +45,36 @@ function ReqActiveSkill:initialize(player, data)
   end
 end
 
+--- 自动选择唯一目标
+---@param req ReqActiveSkill
+local function autoSelectOnlyFeasibleTarget(req, data)
+  if data.autoTarget and not req:feasible() then
+    local tars = {}
+    for _, to in ipairs(req.room.alive_players) do
+      if req:targetValidity(to.id) then
+        table.insert(tars, to.id)
+        if #tars > 1 then return end
+      end
+    end
+    if #tars == 1 then
+      req.selected_targets = tars
+      req.scene:update("Photo", tars[1], { selected = true })
+      req:updateUnselectedTargets()
+      if req:feasible() then
+        req:updateButtons()
+      else
+        req.selected_targets = {}
+        req.scene:update("Photo", tars[1], { selected = false })
+        req:updateUnselectedTargets()
+      end
+    end
+  end
+end
+
 --- 初始化所有信息
 ---@param ignoreInteraction? boolean @ 是否不初始化Interaction，继承原数据
-function ReqActiveSkill:setup(ignoreInteraction)
+---@param data? table @ 出牌阶段发动的技能需要主动传入是否自动选择
+function ReqActiveSkill:setup(ignoreInteraction, data)
   local scene = self.scene
 
   local old_pendings = table.simpleClone(self.pendings or {})
@@ -83,7 +111,9 @@ function ReqActiveSkill:setup(ignoreInteraction)
   self:updateUnselectedCards()
   self:updateUnselectedTargets()
 
-  if ignoreInteraction then -- 修改Interaction时重新筛选一次原选择牌
+  self:visualizePile()
+
+  if ignoreInteraction and #(self.visible_pile or {}) == 0 then -- 修改Interaction时重新筛选一次原选择牌
     for _, cid in ipairs(old_pendings) do
       local item -- 必须确定此牌是否还在UI内
       for _cid, _item in pairs(scene:getAllItems("CardItem")) do
@@ -99,6 +129,11 @@ function ReqActiveSkill:setup(ignoreInteraction)
     end
   end
 
+  if data then
+    autoSelectOnlyFeasibleTarget(self, data)
+  end
+
+  self:refreshInteraction()
   self:updateButtons()
   self:updatePrompt()
 end
@@ -132,7 +167,7 @@ function ReqActiveSkill:setSkillPrompt(skill, selected_cards)
 end
 
 function ReqActiveSkill:updatePrompt()
-  local skill = Fk.skills[self.skill_name]
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   if skill then
     self:setSkillPrompt(skill)
   else
@@ -142,7 +177,7 @@ end
 
 --- 初始化Interaction
 function ReqActiveSkill:setupInteraction()
-  local skill = Fk.skills[self.skill_name]---@type ActiveSkill
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   if skill and skill.interaction then
     skill.interaction.data = nil
     local interaction = skill:interaction(self.player)
@@ -151,6 +186,7 @@ function ReqActiveSkill:setupInteraction()
     end
     skill.interaction.data = interaction.default or interaction.default_choice or nil -- FIXME
     -- 假设只有1个interaction （其实目前就是这样）
+    skill.interaction.spec = table.simpleClone(interaction)
     local i = Interaction:new(self.scene, "1", interaction)
     i.skill_name = interaction.skill_name or self.skill_name
     self.scene:addItem(i)
@@ -164,7 +200,7 @@ end
 ---@param extra_footnote? string @ 卡牌底注
 ---@return integer[] @ 展开的牌id数组
 function ReqActiveSkill:expandPile(pile, extra_ids, extra_footnote)
-  if self.expanded_piles[pile] ~= nil then return {} end
+  if pile ~= "_extra" and self.expanded_piles[pile] ~= nil then return {} end
   local ids, footnote
   local player = self.player
 
@@ -176,13 +212,16 @@ function ReqActiveSkill:expandPile(pile, extra_ids, extra_footnote)
     ids = extra_ids
     footnote = extra_footnote
     -- self.extra_cards = exira_ids
+    self.expanded_piles[pile] = self.expanded_piles[pile] or {}
+    table.insertTable(self.expanded_piles[pile],ids)
   else
     -- expand_pile为私人牌堆名的情况
     -- FIXME: 可能存在的浅拷贝
     ids = extra_ids or table.simpleClone(player:getPile(pile))
     footnote = extra_footnote or pile
   end
-  self.expanded_piles[pile] = ids
+
+  self.expanded_piles[pile] = self.expanded_piles[pile] or ids
 
   local scene = self.scene
   for _, id in ipairs(ids) do
@@ -216,7 +255,7 @@ end
 
 -- 展开额外牌堆（即将所有不在手牌区的牌在手牌区域展开）
 function ReqActiveSkill:expandPiles()
-  local skill = Fk.skills[self.skill_name]---@type ActiveSkill | ViewAsSkill
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   local player = self.player
   if not skill then return end
 
@@ -270,10 +309,10 @@ function ReqActiveSkill:expandPiles()
   elseif type(pile) == "table" then
     ids = table.filter(pile, function(id) return not table.contains(cardsExpanded, id) end)
   end
-  if ids == nil or #ids < 1 then return end
+  if ids == nil or next(ids) == nil then return end
   local room = Fk:currentRoom()
-  local areas = { 
-    [Card.DrawPile] = "pile_draw", 
+  local areas = {
+    [Card.DrawPile] = "pile_draw",
     [Card.Processing] = "processing_area",
     [Card.DiscardPile] = "pile_discard"
   }
@@ -290,8 +329,48 @@ function ReqActiveSkill:expandPiles()
   if areas[area] then
     self:expandPile("_extra", ids, areas[area])
   else
-    self:expandPile("_extra", ids, self.extra_data and self.extra_data.skillName or self.skill_name)
+    local owner_pile, owners = {}, {}
+    for _, id in ipairs(ids) do
+      local owner = room:getCardOwner(id)
+      local owner_key = owner and owner:toLogString() or ""
+      owner_pile[owner_key] = table.insertIfNeed(owners, owner_key) and {} or owner_pile[owner_key]
+      table.insert(owner_pile[owner_key], id)
+    end
+    for _, owner_key in ipairs(owners) do
+      self:expandPile("_extra", owner_pile[owner_key], owner_key ~= "" and owner_key or
+        (self.extra_data and self.extra_data.skillName or self.skill_name))
+    end
   end
+end
+
+--- 刷新一下当前可见牌
+function ReqActiveSkill:visualizePile()
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
+  if not skill then return end
+  local player = self.player
+  local pile = skill.visible_pile or {}
+  local _pile
+  if type(pile) == "function" then
+    _pile = pile(skill, player)
+  else
+    _pile = pile
+  end
+  if type(_pile) == "table" then
+    self.visible_pile = _pile
+  elseif type(_pile) == "string" then
+    if _pile == "_expand_pile" then
+      self.visible_pile = self.expanded_piles["_extra"] or {}
+    else
+      self.visible_pile = player:getPile(_pile)
+    end
+  else
+    self.visible_pile = {}
+  end
+
+  -- 因为visible_pile是纯ui方案，与操作合法性无关，故不需要scene参与，直接改RequestHandler.change
+  
+  self.change = self.change or {}
+  self.change["visible_cards"] = self.visible_pile
 end
 
 --- 判断确认键是否可用
@@ -413,17 +492,19 @@ function ReqActiveSkill:initiateTargets()
 end
 
 --- 更新interaction数据
-function ReqActiveSkill:updateInteraction(data)
-  local skill = Fk.skills[self.skill_name]
+function ReqActiveSkill:updateInteraction(data, ignoreSetup)
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   if skill and skill.interaction then
     skill.interaction.data = data
     self.scene:update("Interaction", "1", { data = data })
-    ReqActiveSkill.setup(self, true) -- interaction变动后需复原
+    if not ignoreSetup then
+      ReqActiveSkill.setup(self, true) -- interaction变动后需复原
+    end
   end
 end
 
 function ReqActiveSkill:doOKButton()
-  local skill = Fk.skills[self.skill_name]
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   local cardstr = {
     skill = self.skill_name,
     subcards = self.pendings
@@ -518,29 +599,17 @@ function ReqActiveSkill:selectTarget(playerid, data)
   self:updateButtons()
 end
 
---- 自动选择唯一目标
----@param req ReqActiveSkill
-local function autoSelectOnlyFeasibleTarget(req, data)
-  if data.autoTarget and not req:feasible() then
-    local tars = {}
-    for _, to in ipairs(req.room.alive_players) do
-      if req:targetValidity(to.id) then
-        table.insert(tars, to.id)
-        if #tars > 1 then return end
-      end
-    end
-    if #tars == 1 then
-      req.selected_targets = tars
-      req.scene:update("Photo", tars[1], { selected = true })
-      req:updateUnselectedTargets()
-      if req:feasible() then
-        req:updateButtons()
-      else
-        req.selected_targets = {}
-        req.scene:update("Photo", tars[1], { selected = false })
-        req:updateUnselectedTargets()
-      end
-    end
+-- 刷新interaction（不是重新加载，区别于updateInteraction）
+function ReqActiveSkill:refreshInteraction()
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill|ViewAsSkill]]
+  if not skill or not skill.refresh_interaction then return end
+  if skill and skill.interaction then
+    local refresh_data = skill:refresh_interaction(
+      self.player, self.pendings or {},
+      table.map(self.selected_targets,
+      Util.Id2PlayerMapper),
+      self.extra_data or {})
+    self.scene:update("Interaction", "1", { refresh_data = refresh_data })
   end
 end
 
@@ -593,9 +662,16 @@ function ReqActiveSkill:update(elemType, id, action, data)
     end
     ]]
   elseif elemType == "Interaction" then
-    self:updateInteraction(data)
+    local ignore = action == "finish"
+    self:updateInteraction(data, ignore)
+  end
+
+  -- 防止冗余计算
+  if elemType ~= "Interaction" then
+    self:refreshInteraction()
   end
   self:updatePrompt()
+  self:visualizePile()
 end
 
 return ReqActiveSkill

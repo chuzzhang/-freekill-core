@@ -6,6 +6,7 @@ Dashboard 1.0 Dashboard.qml
 GeneralCardItem 1.0 GeneralCardItem.qml
 CompactGeneralCardItem 1.0 CompactGeneralCardItem.qml
 BigGlowText 1.0 BigGlowText.qml
+GeneralSkinOverview 1.0 GeneralSkinOverview.qml
 HandcardArea 1.0 HandcardArea.qml
 IndicatorLine 1.0 IndicatorLine.qml
 InvisibleCardArea 1.0 InvisibleCardArea.qml
@@ -21,3 +22,4 @@ TablePile 1.0 TablePile.qml
 SkinItem 1.0 SkinItem.qml
 PoxiLabel 1.0 PoxiLabel.qml
 DescriptionText 1.0 DescriptionText.qml
+OptionArea 1.0 OptionArea.qml

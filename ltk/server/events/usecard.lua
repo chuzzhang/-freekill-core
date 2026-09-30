@@ -206,16 +206,18 @@ function UseCard:main()
       local subType = useCardData.card.sub_type
       local equipsExist = target:getEquipments(subType)
 
-      if #equipsExist > 0 and not target:hasEmptyEquipSlot(subType) then
-        local choices = table.map(
-          equipsExist,
-          function(id, index)
-            return "#EquipmentChoice:" .. index .. "::" .. Fk:translate(Fk:getCardById(id).name) end
-        )
+      if useCardData.toPutSlot == nil and #equipsExist > 0 and not target:hasEmptyEquipSlot(subType) then
+        local choices = table.map(equipsExist, function(id, index)
+          return "#EquipmentChoice:" .. index .. "::" .. Fk:translate(Fk:getCardById(id).name)
+        end)
         if target:hasEmptyEquipSlot(subType) then
           table.insert(choices, target:getAvailableEquipSlots(subType)[1])
         end
-        useCardData.toPutSlot = room:askToChoice(target, { choices = choices, skill_name = "replace_equip", prompt = "#GameRuleReplaceEquipment" })
+        useCardData.toPutSlot = room:askToChoice(target, {
+          choices = choices,
+          skill_name = "replace_equip",
+          prompt = "#GameRuleReplaceEquipment",
+        })
       end
     end
   end

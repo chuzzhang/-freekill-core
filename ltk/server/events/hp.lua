@@ -102,11 +102,15 @@ function ChangeHp:main()
     data.who.hp = math.min(data.who.hp + data.num, data.who.maxHp)
     room:broadcastProperty(data.who, "hp")
 
+    local skillName = Fk:translate(data.skillName) or ""
+    if skillName ~= "" then skillName = "</b><font color='gray'>(" .. skillName .. ")</font><b>" end
+
     if reason == "loseHp" then
       room:sendLog{
         type = "#LoseHP",
         from = data.who.id,
         arg = 0 - data.num,
+        arg2 = skillName,
       }
       room:sendLogEvent("LoseHP", {})
     elseif reason == "recover" then
@@ -114,6 +118,7 @@ function ChangeHp:main()
         type = "#HealHP",
         from = data.who.id,
         arg = data.num,
+        arg2 = skillName,
       }
     end
 
@@ -180,6 +185,8 @@ function Damage:main()
   local room = self.room
   local logic = room.logic
 
+  damageData.last_damage = damageData.damage
+
   if not damageData.chain and logic:damageByCardEffect(false) then
     local cardEffectData = logic:getCurrentEvent():findParent(GameEvent.CardEffect)
     if cardEffectData then
@@ -229,6 +236,7 @@ function Damage:main()
           from = damageData.to.id,
           arg = eventObj.break_reason,
           arg2 = damageName,
+          arg3 = damageData.last_damage,
         }
       else
         room:sendLog {
@@ -236,6 +244,7 @@ function Damage:main()
           from = damageData.to.id,
           arg = eventObj.break_reason,
           arg2 = damageName,
+          arg3 = damageData.last_damage,
         }
       end
       logic:breakEvent(false)
@@ -300,6 +309,7 @@ function Damage:exit()
           card = damageData.card,
           skillName = damageData.skillName,
           chain = true,
+          parent = damageData,
         }
 
         room:damage(dmg)

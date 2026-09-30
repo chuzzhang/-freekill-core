@@ -10,6 +10,7 @@
 ---@field public max_use_time table<integer, integer?> @ 一个效果的最大可用次数
 ---@field public history_branch? string | fun(self: UsableSkill, player: ServerPlayer, data: SkillUseData, extra_data?: UseExtraData|table):string? @ 发动时是否将技能发动历史归类到某个分支
 ---@field public expand_pile? string | integer[] | fun(self: UsableSkill, player: Player): integer[]|string? @ 额外牌堆，牌堆名称或卡牌id表
+---@field public visible_pile? integer[] | string | fun(self: ActiveSkill | ViewAsSkill, player: Player): integer[] | string @ 可见的手牌id，同时筛选手牌和expand_pile
 ---@field public derived_piles? string | string[] @deprecated @ 与某效果联系起来的私人牌堆名，失去该效果时将之置入弃牌堆
 ---@field public times? fun(self: UsableSkill, player: Player): integer
 local UsableSkill = Skill:subclass("UsableSkill")

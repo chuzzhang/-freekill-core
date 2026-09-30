@@ -7,6 +7,7 @@ QtObject {
 
   property list<CardModel> handcards: [];
   property list<CardModel> expandedCards: [];
+  property list<int> visible_ids: [];
 
   property list<SkillModel> skills: [];
   property list<SkillModel> fakeSkills: [];
@@ -192,5 +193,11 @@ QtObject {
         skillBtn.selected = skdata.selected;
       }
     });
+
+    if (uiUpdate["visible_cards"]) {
+      visible_ids = uiUpdate["visible_cards"];
+    } else {
+      visible_ids = []
+    }
   }
 }

@@ -12,7 +12,7 @@ Client = AbstractRoom:subclass('Client')
 ---@field public getPlayerById fun(self: AbstractRoom, id: integer): ClientPlayer
 ---@field public getPlayerBySeat fun(self: AbstractRoom, seat: integer): ClientPlayer
 ---@field public setCurrent fun(self: AbstractRoom, p: ClientPlayer)
----@field public getCurrent fun(self: AbstractRoom): ClientPlayer
+---@field public getCurrent fun(self: AbstractRoom): ClientPlayer?
 
 -- load client classes
 ClientPlayer = require "ltk.client.clientplayer"
@@ -999,6 +999,11 @@ function Client:showVirtualCard(data)
 end
 
 function Client:changeSkin(data)
+  local playerId = tonumber(data[1]) or 0
+  if playerId == 0 then return end
+  local player = self:getPlayerById(playerId)
+  if not player then return end
+  player.skins = self:getPlayerSkinsData(playerId, data)
   self:notifyUI("ChangeSkin", data)
 end
 

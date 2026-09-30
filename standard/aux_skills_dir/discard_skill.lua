@@ -12,7 +12,7 @@ _skill:addEffect('active', {
 
     if Fk:currentRoom():getCardArea(to_select) == Card.PlayerSpecial then
       local pile = ""
-      for p, t in pairs(Self.special_cards) do
+      for p, t in pairs(player.special_cards) do
         if table.contains(t, to_select) then
           pile = p
           break
@@ -26,7 +26,7 @@ _skill:addEffect('active', {
 
     local status_skills = Fk:currentRoom().status_skills[ProhibitSkill] or Util.DummyTable
     for _, skill in ipairs(status_skills) do
-      if skill:prohibitDiscard(Self, card) then
+      if skill:prohibitDiscard(player, card) then
         return false
       end
     end
@@ -34,7 +34,7 @@ _skill:addEffect('active', {
       ---@type MaxCardsSkill[]
       status_skills = Fk:currentRoom().status_skills[MaxCardsSkill] or Util.DummyTable
       for _, sk in ipairs(status_skills) do
-        if sk:excludeFrom(Self, card) then
+        if sk:excludeFrom(player, card) then
           return false
         end
       end

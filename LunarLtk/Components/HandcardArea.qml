@@ -271,7 +271,12 @@ Item {
 
   function syncCards() {
     // sync expandedCards
-    const allCards = [...dataModel.handcards, ...dataModel.expandedCards];
+    const allCards = [...dataModel.handcards, ...dataModel.expandedCards].filter(model => {
+      const ids = dataModel.visible_ids ?? [];
+      if (ids.length === 0) return true;
+      if (ids.indexOf(model.cardId) !== -1) return true;
+      return false
+    });
     const orderedCards = [];
     const extractedCards = [];
     for (const card of cards) {
@@ -292,7 +297,7 @@ Item {
       card.goBack(true);
     }
 
-    cards = orderedCards;
+    cards = orderedCards.filter(c => c !== undefined);
     const component = Qt.createComponent("LunarLtk.Components", "CardItem");
     for (const model of allCards) {
       if (cards.find(e => e.dataModel === model)) continue;
@@ -301,6 +306,7 @@ Item {
         y: myPos.y,
         dataModel: model,
       });
+      model.selectedChanged() // 手动刷新一下
       const selectable = model.selectable;
       if (dataModel.expandedCards.includes(model)) {
         // 手牌区固定不显示脚注了，之前手牌用来显示区域或提示的文本改了个UI

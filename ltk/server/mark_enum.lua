@@ -81,3 +81,6 @@ MarkEnum.DestructOutMyEquip = "__destr_my_equip"
 
 -- 进入非装备区销毁(可在装备区/处理区移动) 例OL冯方女
 MarkEnum.DestructOutEquip = "__destr_equip"
+
+-- 修改最大护甲值，默认5，正数为增加，负数为减少
+MarkEnum.MaxShieldChanged = "__max_shield_changed"

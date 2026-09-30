@@ -4,7 +4,7 @@
 local ProhibitSkill = StatusSkill:subclass("ProhibitSkill")
 
 --- 判定是否合法目标
----@param from Player? 使用者
+---@param from? Player 使用者
 ---@param to Player @ 使用目标
 ---@param card Card @ 使用的牌
 ---@return boolean

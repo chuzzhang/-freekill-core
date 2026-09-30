@@ -23,6 +23,7 @@ Item {
     RowLayout {
       id: generalColumn
       required property string modelData
+      required property int index
       visible: toConvertRepeater.model.length > 0
       spacing: 12
       CompactGeneralCardItem {
@@ -56,7 +57,7 @@ Item {
             selectable: true
 
             onClicked: {
-              root.dataModel.changeGeneral(generalColumn.modelData, dataModel);
+              root.dataModel.changeGeneral(generalColumn.index, dataModel);
 
               root.finish();
             }

@@ -47,13 +47,26 @@ function ReqPlayCard:cardValidity(cid)
   end
 
   if not ret then
-    local skills = card.special_skills
-    if not skills then return false end
+    local skills = {}
+    if type(card.special_skills) == "table" then
+      table.insertTable(skills, card.special_skills)
+    end
+    for _, playerSkill in ipairs(player:getAllSkills()) do
+      if
+        playerSkill:isInstanceOf(ViewAsSkill) and
+        playerSkill.autoViewAs and
+        self:skillButtonValidity(playerSkill.name, cid) and
+        playerSkill:cardFilter(player, cid, {}, {})
+      then
+        table.insert(skills, playerSkill.name)
+      end
+    end
+
     for _, skill in ipairs(skills) do
       local s = Fk.skills[skill]
       if s:isInstanceOf(ActiveSkill) and s:canUse(player) then
         return true
-      elseif s:isInstanceOf(ViewAsSkill) and s:enabledAtPlay(player) then
+      elseif s:isInstanceOf(ViewAsSkill) and s:enabledAtPlay(player, cid) then
         return true
       end
     end
@@ -61,11 +74,11 @@ function ReqPlayCard:cardValidity(cid)
   return not not ret
 end
 
-function ReqPlayCard:skillButtonValidity(name)
+function ReqPlayCard:skillButtonValidity(name, cid)
   local player = self.player
   local skill = Fk.skills[name]---@type ActiveSkill | ViewAsSkill
   if skill:isInstanceOf(ViewAsSkill) then
-    local ret = skill:enabledAtPlay(player)
+    local ret = skill:enabledAtPlay(player, cid)
     if ret then -- 没有pattern，或者至少有一个满足
       local exp = Exppattern:Parse(skill.pattern)
       local cnames = {}
@@ -148,7 +161,7 @@ function ReqPlayCard:doOKButton()
   local reply = {
     card = self.selected_card:getEffectiveId(),
     targets = self.selected_targets,
-    special_skill = self.skill_name
+    special_skill = self.skill_name,
   }
   if ClientInstance then
     ClientInstance:notifyUI("ReplyToServer", reply)
@@ -192,12 +205,44 @@ function ReqPlayCard:selectCard(cid, data)
     scene:unselectOtherCards(cid)
     -- self:setSkillPrompt(self.selected_card.skill, self.selected_card:getEffectiveId())
     local sp_skills = {}
-    if self.selected_card.special_skills and table.contains(self.player:getCardIds("h"), cid) then
-      sp_skills = table.simpleClone(self.selected_card.special_skills)
-      if self.player:canUse(self.selected_card) then
-        table.insert(sp_skills, 1, "_normal_use")
-      else
-        self:selectSpecialUse(sp_skills[1])
+
+    local skills = {}
+    if type(self.selected_card.special_skills) == "table" then
+      table.insertTable(skills, self.selected_card.special_skills)
+    end
+    for _, playerSkill in ipairs(self.player:getAllSkills()) do
+      if
+        playerSkill:isInstanceOf(ViewAsSkill) and
+        playerSkill.autoViewAs and
+        self:skillButtonValidity(playerSkill.name, cid) and
+        playerSkill:cardFilter(self.player, cid, {}, {})
+      then
+        table.insert(skills, playerSkill.name)
+      end
+    end
+
+    if #skills > 0 then
+      for _, s in ipairs(skills) do
+        local skill = Fk.skills[s]
+        if skill:isInstanceOf(ActiveSkill) then
+          skill = skill  ---@cast skill ActiveSkill
+          if skill:canUse(self.player) and table.contains(self.player:getCardIds("h"), cid) then
+            table.insert(sp_skills, s)
+          end
+        elseif skill:isInstanceOf(ViewAsSkill) then
+          skill = skill  ---@cast skill ViewAsSkill
+          if skill:enabledAtPlay(self.player, cid) then
+            table.insert(sp_skills, s)
+          end
+        end
+      end
+      if #sp_skills > 0 then
+        if self.player:canUse(self.selected_card) then
+          table.insert(sp_skills, 1, "_normal_use")
+        else
+          self:selectSpecialUse(sp_skills[1])
+        end
+        self.scene:update("SpecialSkills", "1", { skills = sp_skills })
       end
     end
     self.scene:update("SpecialSkills", "1", { skills = sp_skills })

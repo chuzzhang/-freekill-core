@@ -15,6 +15,13 @@ MetroButton {
 
   text: Ltk.processPrompt(answer)
 
+  Connections {
+    target: dataModel
+    function onAccepted() {
+      answer = dataModel.result[0];
+    }
+  }
+
   onAnswerChanged: {
     if (!answer) return;
     Lua.updateRequestUI("Interaction", "1", "update", answer);
@@ -23,8 +30,5 @@ MetroButton {
   onClicked: {
     if (!dataModel.cancelable && dataModel.choices.length < 2) return;
     roomScene.showPopup(Qt.createComponent("LunarLtk.Pages.Popups", "CardNamesBox"), { dataModel });
-    dataModel.accepted.connect(() => {
-      answer = dataModel.result[0];
-    });
   }
 }

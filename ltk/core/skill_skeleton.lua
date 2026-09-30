@@ -586,6 +586,7 @@ function SkillSkeleton:createActiveSkill(_skill, idx, key, attr, spec)
   if spec.target_tip then skill.targetTip = spec.target_tip end
   if spec.handly_pile then skill.handly_pile = spec.handly_pile end
   if spec.click_count then skill.click_count = spec.click_count end
+  if spec.autoViewAs then skill.autoViewAs = spec.autoViewAs end
 
   if spec.fix_targets then
     skill.fixTargets = spec.fix_targets
@@ -596,6 +597,9 @@ function SkillSkeleton:createActiveSkill(_skill, idx, key, attr, spec)
   end
 
   fk.readInteractionToSkill(skill, spec)
+  if spec.refresh_interaction and type(spec.refresh_interaction) == "function" then
+    skill.refresh_interaction = spec.refresh_interaction
+  end
   return skill
 end
 
@@ -695,26 +699,30 @@ function SkillSkeleton:createViewAsSkill(_skill, idx, key, attr, spec)
   end
 
   if type(spec.enabled_at_play) == "function" then
-    skill.enabledAtPlay = function(curSkill, player)
-      return timeCheck(curSkill, player) and spec.enabled_at_play(curSkill, player) and curSkill:isEffectable(player)
+    skill.enabledAtPlay = function(curSkill, player, cid)
+      return timeCheck(curSkill, player) and spec.enabled_at_play(curSkill, player, cid) and curSkill:isEffectable(player)
     end
   else
-    skill.enabledAtPlay = function(curSkill, player)
-      return timeCheck(curSkill, player) and ViewAsSkill.enabledAtPlay(curSkill, player)
+    skill.enabledAtPlay = function(curSkill, player, cid)
+      return timeCheck(curSkill, player) and ViewAsSkill.enabledAtPlay(curSkill, player, cid)
     end
   end
   if type(spec.enabled_at_response) == "function" then
-    skill.enabledAtResponse = function(curSkill, player, cardResponsing)
-      return timeCheck(curSkill, player) and spec.enabled_at_response(curSkill, player, cardResponsing) and curSkill:isEffectable(player)
+    skill.enabledAtResponse = function(curSkill, player, cardResponsing, cid)
+      return timeCheck(curSkill, player) and spec.enabled_at_response(curSkill, player, cardResponsing, cid) and curSkill:isEffectable(player)
     end
   else
-    skill.enabledAtResponse = function(curSkill, player, cardResponsing)
-      return timeCheck(curSkill, player) and ViewAsSkill.enabledAtResponse(curSkill, player, cardResponsing)
+    skill.enabledAtResponse = function(curSkill, player, cardResponsing, cid)
+      return timeCheck(curSkill, player) and ViewAsSkill.enabledAtResponse(curSkill, player, cardResponsing, cid)
     end
   end
   if spec.prompt then skill.prompt = spec.prompt end
 
   fk.readInteractionToSkill(skill, spec)
+
+  if spec.refresh_interaction and type(spec.refresh_interaction) == "function" then
+    skill.refresh_interaction = spec.refresh_interaction
+  end
 
   if spec.before_use and type(spec.before_use) == "function" then
     skill.beforeUse = spec.before_use
@@ -738,6 +746,8 @@ function SkillSkeleton:createViewAsSkill(_skill, idx, key, attr, spec)
   end
 
   skill.handly_pile = spec.handly_pile
+
+  skill.autoViewAs = spec.autoViewAs
 
   if spec.mute_card ~= nil then
     skill.mute_card = spec.mute_card

@@ -18,18 +18,23 @@ end
 ---@param player ServerPlayer
 function EquipCard:onInstall(room, player)
   local equipSkills = self:getEquipSkills(player)
-  if #equipSkills > 0 then
-    local noTrigger = table.filter(equipSkills, function(skill) return skill:getSkeleton().attached_equip ~= nil end)
-    if #noTrigger > 0 then
-      noTrigger = table.map(noTrigger, Util.NameMapper)
-      room:handleAddLoseSkills(player, table.concat(noTrigger, "|"), nil, false, true)
+  if #equipSkills == 0 then return end
+  local noTrigger, toTrigger = {}, {} ---@type Skill[], Skill[]
+  for _, skill in ipairs(equipSkills) do
+    if skill:getSkeleton().attached_equip ~= nil then
+      table.insert(noTrigger, skill)
+    else
+      table.insert(toTrigger, skill)
     end
+  end
+  if #noTrigger > 0 then
+    noTrigger = table.map(noTrigger, Util.NameMapper)
+    room:handleAddLoseSkills(player, noTrigger, nil, false, true)
+  end
 
-    local toTrigger = table.filter(equipSkills, function(skill) return not skill:getSkeleton().attached_equip end)
-    if #toTrigger > 0 then
-      toTrigger = table.map(toTrigger, Util.NameMapper)
-      room:handleAddLoseSkills(player, table.concat(toTrigger, "|"), nil, false)
-    end
+  if #toTrigger > 0 then
+    toTrigger = table.map(toTrigger, Util.NameMapper)
+    room:handleAddLoseSkills(player, toTrigger, nil, false)
   end
 end
 
@@ -37,27 +42,30 @@ end
 ---@param player ServerPlayer
 function EquipCard:onUninstall(room, player)
   local equipSkills = self:getEquipSkills(player)
-  if #equipSkills > 0 then
-    --- 真正的装备技能
-    local noTrigger = table.filter(equipSkills, function(skill) return skill:getSkeleton().attached_equip ~= nil end)
-    if #noTrigger > 0 then
-      local toDelete = table.filter(noTrigger, function (skill)
-        return table.find(player:getEquipments(), function (id)
-          local card = player:getVirtualEquip(id) or Fk:getCardById(id)
-          return card.name == skill:getSkeleton().attached_equip
-        end) == nil
-      end)
-      if #toDelete > 0 then
-        toDelete = table.map(toDelete, function(skill) return '-' .. skill.name end)
-        room:handleAddLoseSkills(player, toDelete, nil, false, true)
+  if #equipSkills == 0 then return end
+  local toDelete, toTrigger = {}, {} ---@type Skill[], Skill[]
+  for _, skill in ipairs(equipSkills) do
+    if skill:getSkeleton().attached_equip ~= nil then --- 真正的装备技能
+      -- table.insert(noTrigger, skill)
+      if table.find(player:getEquipments(), function (id)
+        local card = player:getVirtualEquip(id) or Fk:getCardById(id)
+        return card.name == skill:getSkeleton().attached_equip
+      end) == nil then
+        table.insert(toDelete, skill)
       end
+    else
+      table.insert(toTrigger, skill)
     end
+  end
 
-    local toTrigger = table.filter(equipSkills, function(skill) return not skill:getSkeleton().attached_equip end)
-    if #toTrigger > 0 then
-      toTrigger = table.map(toTrigger, function(skill) return '-' .. skill.name end)
-      room:handleAddLoseSkills(player, table.concat(toTrigger, "|"), nil, false)
-    end
+  if #toDelete > 0 then
+    toDelete = table.map(toDelete, function(skill) return '-' .. skill.name end)
+    room:handleAddLoseSkills(player, toDelete, nil, false, true)
+  end
+
+  if #toTrigger > 0 then
+    toTrigger = table.map(toTrigger, function(skill) return '-' .. skill.name end)
+    room:handleAddLoseSkills(player, toTrigger, nil, false)
   end
 end
 

@@ -44,6 +44,10 @@ Item {
       }
     }
 
+    if (propDict["subTitle"]) {
+      propDict["subTitle"] = Lua.tr(propDict["subTitle"]);
+    }
+
     if (propDict["title"]) {
       if (!propDict["subTitle"]) {
         const subTitle = "help: " + propDict["title"];
@@ -115,6 +119,10 @@ Item {
         if (!k.startsWith("_")) {
           propDict[k] = data[k];
         }
+      }
+
+      if (propDict["subTitle"]) {
+        propDict["subTitle"] = Lua.tr(propDict["subTitle"]);
       }
 
       if (propDict["title"]) {

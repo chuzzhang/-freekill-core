@@ -145,10 +145,15 @@ function ReqResponseCard:updateSkillButtons()
 end
 
 function ReqResponseCard:doOKButton()
-  if self.skill_name then return ReqActiveSkill.doOKButton(self) end
+  self.scene:update("SpecialSkills", "1", { skills = {} })
+  self.scene:notifyUI()
+  if self.skill_name then
+    return ReqActiveSkill.doOKButton(self)
+  end
   local reply = {
     card = self.selected_card:getEffectiveId(), -- FIXME: 以小错防大错
     targets = self.selected_targets or {},
+    special_skill = self.skill_name,
   }
   if ClientInstance then
     ClientInstance:notifyUI("ReplyToServer", reply)
@@ -158,6 +163,7 @@ function ReqResponseCard:doOKButton()
 end
 
 function ReqResponseCard:doCancelButton()
+  self.scene:update("SpecialSkills", "1", { skills = {} })
   if self.skill_name then
     self:selectSkill(self.skill_name, { selected = false })
     self.scene:notifyUI()
@@ -170,6 +176,7 @@ function ReqResponseCard:selectSkill(skill, data)
   local scene = self.scene
   local selected = data.selected
   scene:update("SkillButton", skill, data)
+  scene:update("SpecialSkills", "1", { skills = {} })
 
   if selected then
     for name, item in pairs(scene:getAllItems("SkillButton")) do
@@ -178,7 +185,7 @@ function ReqResponseCard:selectSkill(skill, data)
     self.skill_name = skill
     self.selected_card = nil
 
-    ReqActiveSkill.setup(self)
+    ReqActiveSkill.setup(self, false, data)
 
     -- self:setSkillPrompt(Fk.skills[skill])
   else
@@ -201,15 +208,25 @@ function ReqResponseCard:selectCard(cid, data)
     self.selected_card = Fk:getCardById(cid)
     scene:unselectOtherCards(cid)
     local sp_skills = {}
-    if self.selected_card.special_skills and table.contains(self.player:getHandlyIds(), cid) then
-      sp_skills = table.filter(self.selected_card.special_skills or {}, function (s)
-        return Fk.skills[s]:isInstanceOf(ViewAsSkill) and Fk.skills[s]:enabledAtResponse(self.player)
-      end)
-      self:selectSpecialUse(sp_skills[1])
+    if self.selected_card.special_skills then
+      for _, s in ipairs(self.selected_card.special_skills or {}) do
+        local skill = Fk.skills[s]
+        if skill:isInstanceOf(ViewAsSkill) and table.contains(self.player:getHandlyIds(), cid) then
+          skill = skill  ---@cast skill ViewAsSkill
+          if skill:enabledAtResponse(self.player, true) then
+            table.insert(sp_skills, s)
+          end
+        end
+      end
+      if #sp_skills > 0 then
+        self:selectSpecialUse(sp_skills[1])
+      end
     end
     self.scene:update("SpecialSkills", "1", { skills = sp_skills })
   else
     self.selected_card = nil
+    self:setPrompt(self.original_prompt)
+    self.skill_name = nil
     self.scene:update("SpecialSkills", "1", { skills = {} })
   end
 end

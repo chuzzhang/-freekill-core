@@ -229,6 +229,7 @@ W.PageBase {
     id: morePagesDrawer
     width: 0.6 * Config.winWidth
     height: Config.winHeight
+    interactive: mainStack.currentItem === root
     edge: Qt.RightEdge
 
     dim: false
@@ -579,22 +580,6 @@ W.PageBase {
         pages: v.pages,
       });
     }
-    // const preferredOrder = [];
-    // for (const v of customPagesSpecs) {
-    //   morePagesModel.append({
-    //     pkname: v.name,
-    //     pages: v.pages,
-    //   });
-    //   for (const vp of v.pages) {
-    //     const vi = Config.preferredButtons.indexOf(vp.name)
-    //     if (vi !== -1) {
-    //       preferredOrder[vi] = vp;
-    //     }
-    //   }
-    // }
-    // for (const vp of preferredOrder) {
-    //   preferredButtonsModel.append(vp);
-    // }
     rearrangePreferred();
 
     Db.tryInitModeSettings();

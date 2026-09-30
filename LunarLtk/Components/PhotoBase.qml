@@ -5,6 +5,7 @@ import Fk
 import Fk.Components.Common
 import Fk.Components.GameCommon as Game
 import Fk.Widgets as W
+import LunarLtk
 import LunarLtk.Components.Photo
 
 // 这个是简化版Photo，用于神鲁肃之类的选人框
@@ -22,8 +23,8 @@ Game.BasicItem {
   property string deputyGeneral: ""
   property string kingdom: "qun"
   property int seatNumber: 1
-  property alias skinSource: skin.source
-  property alias deputySkinSource: deputySkin.source
+  property var skinSource: ({})
+  property var deputySkinSource: ({})
   property alias changeSkinTimer: cooldownTimer
   property bool enableChangeSkin: false
 
@@ -76,28 +77,24 @@ Game.BasicItem {
         }
         if (deputyGeneral) {
           return SkinBank.getGeneralExtraPic(general, "dual/")
-              ?? SkinBank.getGeneralPicture(general);
+          ?? SkinBank.getGeneralPicture(general);
         } else {
           return SkinBank.getGeneralPicture(general)
         }
       }
 
       onSourceChanged: {
-        if (playerid === roomScene.dashboardId) {
-          const changed_source = root.getConfigSkin(root.general);
-          if (changed_source !== "") {
-            Cpp.notifyServer("PushRequest", "changeskin," + changed_source)
-          }
-        }
+        root.refreshSkins()
       }
     }
 
     SkinArea {
       id: skin
-      width: deputyGeneral ? parent.width / 2 : parent.width
+      source: root.skinSource.name ? (Cpp.path + "/" + root.skinSource.path + root.skinSource.name) : ""
+      width: generalImage.width
       Behavior on width { NumberAnimation { duration: 100 } }
       height: parent.height
-      hasDeputy: !!deputyGeneral
+      hasDeputy: !!root.deputyGeneral
     }
 
     Image {
@@ -111,24 +108,20 @@ Game.BasicItem {
         const general = deputyGeneral;
         if (deputyGeneral != "") {
           return SkinBank.getGeneralExtraPic(general, "dual/")
-              ?? SkinBank.getGeneralPicture(general);
+          ?? SkinBank.getGeneralPicture(general);
         } else {
           return "";
         }
       }
 
       onSourceChanged: {
-        if (playerid === roomScene.dashboardId) {
-          const changed_source = root.getConfigSkin(root.deputyGeneral);
-          if (changed_source !== "") {
-            Cpp.notifyServer("PushRequest", "changeskin,," + changed_source)
-          }
-        }
+        root.refreshSkins()
       }
     }
 
     SkinArea {
       id: deputySkin
+      source: root.deputySkinSource.name ? (Cpp.path + "/" + root.deputySkinSource.path + root.deputySkinSource.name) : ""
       anchors.left: generalImage.right
       width: parent.width / 2
       height: parent.height
@@ -206,7 +199,7 @@ Game.BasicItem {
     text: {
       let ret = screenName;
       if (Config.blockedUsers?.includes(screenName))
-        ret = Lua.tr("<Blocked> ") + ret;
+      ret = Lua.tr("<Blocked> ") + ret;
       return ret;
     }
     elide: root.playerid === Cpp.self.id ? Text.ElideNone : Text.ElideMiddle
@@ -220,26 +213,25 @@ Game.BasicItem {
     z: 9
   }
 
-  Image {
+  MetroButton {
     id: skinIcon
-    width: 22
+    width: 40
     height: 22
     anchors.right: parent.right
     anchors.top: parent.top
     anchors.rightMargin: 10
     anchors.topMargin: 100
-    source: "https://images.icon-icons.com/1526/PNG/512/dress_106586.png"
+    text: Lua.tr("Change Skin")
+    textFont.pixelSize: 12
     visible: false
 
-    W.TapHandler {
-      onTapped: {
-        roomScene.showInfoPopup(Qt.createComponent("LunarLtk.Pages.InfoPopups", "SkinsDetail"), {
-          skins: root.getSkinsByName(root.general),
-          deputy_skins: root.getSkinsByName(root.deputyGeneral),
-          orig_general: root.general,
-          orig_deputy: root.deputyGeneral,
-        });
-      }
+    onClicked: {
+      roomScene.showInfoPopup(Qt.createComponent("LunarLtk.Pages.InfoPopups", "SkinsDetail"), {
+        skins: Ltk.getSkinNamesByGeneral(root.general),
+        deputy_skins: Ltk.getSkinNamesByGeneral(root.deputyGeneral),
+        orig_general: root.general,
+        orig_deputy: root.deputyGeneral,
+      });
     }
 
     HoverHandler {
@@ -256,7 +248,7 @@ Game.BasicItem {
   HoverHandler {
     id: hover
     onHoveredChanged: {
-      if (hovered && root.enableChangeSkin && !Config.observing && !cooldownTimer.running && (root.getSkinsByName(root.general).length > 0 || root.getSkinsByName(root.deputyGeneral).length > 0)) {
+      if (hovered && root.enableChangeSkin && (roomScene.dataModel?.dashboardId === root.playerid) && !Config.observing && !cooldownTimer.running && (Ltk.getSkinNamesByGeneral(root.general).length > 0 || Ltk.getSkinNamesByGeneral(root.deputyGeneral).length > 0)) {
         skinIcon.visible = true;
       } else {
         skinIcon.visible = false;
@@ -264,16 +256,24 @@ Game.BasicItem {
     }
   }
 
+  function refreshSkins() {
+    if (root.playerid === roomScene.dataModel?.dashboardId && !Config.observing) {
+      let command = "changeskin,";
+      const source = root.getConfigSkin(root.general);
+      command = command + source + ","
+      const deputySource = root.getConfigSkin(root.deputyGeneral);
+      command = command + deputySource
+
+      Cpp.notifyServer("PushRequest", command)
+    }
+  }
+
   function chat(msg) {
     chat.text = msg;
     chat.visible = true;
     chat.show();
-  }
 
-  function getSkinsByName(general) {
-    return Lua.fk.getSkinsByGeneral(general) || [];
   }
-
   function getConfigSkin(general) {
     const enabledSkins = Config.enabledSkins ?? {}
     if (enabledSkins[general] !== undefined) {

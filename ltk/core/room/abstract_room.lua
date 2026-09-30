@@ -18,7 +18,7 @@ local AbstractRoom = RoomBase:subclass("AbstractRoom")
 ---@field public getPlayerById fun(self: AbstractRoom, id: integer): Player
 ---@field public getPlayerBySeat fun(self: AbstractRoom, seat: integer): Player
 ---@field public setCurrent fun(self: AbstractRoom, p: Player)
----@field public getCurrent fun(self: AbstractRoom): Player
+---@field public getCurrent fun(self: AbstractRoom): Player?
 
 local CardManager = require 'ltk.core.room.card_manager'
 AbstractRoom:include(CardManager)
@@ -115,6 +115,27 @@ function AbstractRoom:filterCard(id, player, judgeEvent)
   return card
 end
 
+---根据客户端传过来的data获得用于存储在player的skin数据，放在这里只是因为server和client都要用
+---@param id integer @ playerId
+---@param data table @ 客户端传过来的数据
+---@return table<string, SkinContent> @ player.skins
+function AbstractRoom:getPlayerSkinsData(id, data)
+  local player = self:getPlayerById(id)
+  if not player then error("No player! Check whether the player exists or not!") end
+  local skinsData = {}
+  if data[3] ~= "" and data[3] ~= "-" then
+    skinsData.main = Fk:getSkinByName(player.general, data[3]) or player.skins.main
+  elseif data[3] ~= "-" then
+    skinsData.main = player.skins.main
+  end
+  if data[4] ~= "" and data[4] ~= "-" and player.deputyGeneral ~= "" then
+    skinsData.deputy = Fk:getSkinByName(player.deputyGeneral, data[4]) or player.skins.deputy
+  elseif data[4] ~= "-" then
+    skinsData.deputy = player.skins.deputy
+  end
+  return skinsData
+end
+
 
 function AbstractRoom:serialize()
   local o = RoomBase.serialize(self)
@@ -141,6 +162,12 @@ end
 ---@return boolean
 function AbstractRoom:isGameMode(mode)
   return table.contains(Fk.main_mode_list[mode] or {}, self:getSettings('gameMode'))
+end
+
+--- 获取当前游戏模式
+---@return GameMode
+function AbstractRoom:getGameMode()
+  return Fk.game_modes[self:getSettings('gameMode')]
 end
 
 return AbstractRoom

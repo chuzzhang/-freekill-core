@@ -18,7 +18,7 @@ local basePackage = require "core.package"
 ---@field public skill_skels SkillSkeleton[]
 ---@field public card_skels CardSkeleton[]
 ---@field public card_specs [string, integer, integer, table][]
----@field public skin_specs table<string, string[]>
+---@field public skin_specs table<string, SkinContent[]>
 local Package = basePackage:subclass("Package")
 
 ---@alias PackageType integer
@@ -170,27 +170,31 @@ function Package:install(engine)
   engine:addGameModes(self.game_modes)
 
   for g, skins in pairs(self.skin_specs) do
-    if engine.skin_packages[g] then
-      table.insertTable(engine.skin_packages[g], skins)
-    else
-      engine.skin_packages[g] = skins
+    if not engine.skin_packages[g] then engine.skin_packages[g] = {} end
+    for name, skin in pairs(skins) do
+      if engine.skin_packages[g][name] then
+        fk.qWarning("Warning: duplicated skin name: " .. skin .. "between two extensions. general: " .. g)
+      end
+      engine.skin_packages[g][name] = skin
     end
   end
 end
 
+-- 加载所有皮肤拓展
 ---@param skinPak SkinPackageSpec
 function Package:addSkinPackage(skinPak)
+  skinPak.path = skinPak.path or "/image/skins"
   local pkg_path = "packages/" .. self.extensionName .. skinPak.path .. "/"
   for _, arr in ipairs(skinPak.content) do
     for _, g in ipairs(arr.enabled_generals) do
       if g ~= "" then
-        local path_map = table.map(arr.skins, function(s)
-          return pkg_path .. s
-        end)
-        if self.skin_specs[g] then
-          table.insertTable(self.skin_specs[g], path_map)
-        else
-          self.skin_specs[g] = path_map
+        self.skin_specs[g] = self.skin_specs[g] or {}
+        for _, skin in ipairs(arr.skins) do
+          local skin_content = { name = skin, path = pkg_path } ---@type SkinContent
+          if self.skin_specs[g][skin] then
+            fk.qWarning("Warning: duplicated skin name: " .. skin .. " in extension " .. self.extensionName .. ". general: " .. g)
+          end
+          self.skin_specs[g][skin] = skin_content
         end
       end
     end

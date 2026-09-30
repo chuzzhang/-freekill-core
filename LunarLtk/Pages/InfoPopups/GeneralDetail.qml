@@ -6,6 +6,7 @@ import QtQuick.Layouts
 
 import Fk
 import LunarLtk
+import LunarLtk.Components
 
 Flickable {
   id: root
@@ -23,46 +24,48 @@ Flickable {
     width: parent.width - 40
     x: 20
 
-    TextEdit {
-      id: skillDesc
-
-      Layout.fillWidth: true
-      font.pixelSize: 18
-      color: "#E4D5A0"
-
-      readOnly: true
-      selectByKeyboard: true
-      selectByMouse: false
-      wrapMode: TextEdit.WordWrap
-      textFormat: TextEdit.RichText
+    Flickable {
+      width: parent.width
+      height: parent.height
+      contentHeight: skillDesc.height
+      ScrollBar.vertical: ScrollBar {}
+      DescriptionText {
+        id: skillDesc
+        color: "#E4D5A0"
+        width: parent.width
+        text: root.getGeneralDescText();
+      }
     }
   }
 
-  onGeneralsChanged: {
+  function getGeneralDescText() {
+    let desc = "";
     generals.forEach((g) => {
       const data = Ltk.getGeneralDetail(g);
-      skillDesc.append(Lua.tr(data.kingdom) + " " + Lua.tr(g) + " " + (data.hp === data.maxHp
+      desc += Lua.tr(data.kingdom) + " " + Lua.tr(g) + " " + (data.hp === data.maxHp
         ? ((g.startsWith('hs__') || g.startsWith('ld__') || g.includes('heg__'))
           ? ((data.mainMaxHp != 0 || data.deputyMaxHp != 0)
             ? ((data.hp + data.mainMaxHp) / 2 + '/' + (data.hp + data.deputyMaxHp) / 2)
             : data.hp / 2)
           : data.hp)
-        : data.hp + "/" + data.maxHp));
-      if (data.headnote !== "") skillDesc.append("<font color=\"lightslategrey\">" + Lua.tr(data.headnote) + "</font>");
+        : data.hp + "/" + data.maxHp) + "<br/>";
+      if (data.headnote !== "") desc += "<font color=\"lightslategrey\">" + Lua.tr(data.headnote) + "</font><br/>";
       if (data.companions.length > 0){
         let ret = '';
         ret +="<font color=\"slategrey\"><b>" + Lua.tr("Companions") + "</b>: ";
         data.companions.forEach(t => {
           ret += Lua.tr(t) + ' '
         });
-        skillDesc.append(ret)
+        ret += "</font><br/>";
+        desc += ret
       }
       data.skill.forEach(t => {
-        skillDesc.append((t.is_related_skill ? "<font color=\"purple\"><b>" : "<b>") + Lua.tr(t.name) +
-          "</b>: " + t.description + (t.is_related_skill ? "</font>" : ""));
+        desc += (t.is_related_skill ? "<font color=\"purple\"><b>" : "<b>") + Lua.tr(t.name) +
+          "</b>: " + t.description + (t.is_related_skill ? "</font>" : "") + "<br/>";
       });
-      if (data.endnote !== "") skillDesc.append("<font color=\"lightslategrey\">" + Lua.tr(data.endnote) + "</font>");
-      skillDesc.append("\n");
+      if (data.endnote !== "") desc += "<font color=\"lightslategrey\">" + Lua.tr(data.endnote) + "</font><br/>";
+      desc += "<br/>";
     });
+    return desc;
   }
 }

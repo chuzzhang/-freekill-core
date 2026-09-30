@@ -36,6 +36,8 @@ QtObject {
   // 我们主视角的数据在此
   property DashboardModel dashboard: DashboardModel {}
 
+  property OptionsModel options
+
   // 处理区中的ui常驻卡牌
   property list<CardModel> processing: [];
 
@@ -49,6 +51,7 @@ QtObject {
   property bool okEnabled: false // 可以点确定按钮？
   property bool cancelEnabled: false // 可以点取消按钮？
   property bool endButtonVisible: false // 结束回合可见？
+  property bool optionVisible: false // 结束回合可见？
 
   // 读条信息
   property real requestTotal // 总共的读条时长
@@ -63,7 +66,7 @@ QtObject {
   property var skippedUseEventIds: []
   readonly property bool canSkipNullification: {
     return !!skipNullificationData &&
-      !skippedUseEventIds.find(id => id === skipNullificationData.useEventId)
+    !skippedUseEventIds.find(id => id === skipNullificationData.useEventId)
   }
 
   readonly property string promptText: Ltk.processPrompt(prompt)
@@ -72,6 +75,7 @@ QtObject {
   signal playerAdded(PhotoModel model); // 新玩家加入的信号（addNpc）
   signal cardsMoved(var move, var models); // 操作完移牌数据后通知ui
   signal popupReady(string command,var data, var model); // 准备好弹窗所需model后通知ui
+  signal optionReady(var model)
 
   signal agReady(); // FIXME 烂完了五谷
 
@@ -176,6 +180,7 @@ QtObject {
   function propertyUpdate(_, data) {
     const [uid, property_name, value] = data;
     const model = getPhoto(uid);
+    // FIXME: skins这边写成这样不太好看
     if (model && property_name in model) {
       model[property_name] = value;
     }
@@ -269,7 +274,7 @@ QtObject {
   function setCardFootnote(_, data) {
     const [id, note, virtual] = data;
     const v = processing.find(e => e[virtual ? "virtId" : "cardId"] === id)
-      || discard.find(e => e[virtual ? "virtId" : "cardId"] === id);
+    || discard.find(e => e[virtual ? "virtId" : "cardId"] === id);
     if (v) {
       v.footnote = note;
       v.footnoteVisible = true;
@@ -280,7 +285,7 @@ QtObject {
     const [ids, note, virtual] = data;
     ids.forEach(id => {
       const v = processing.find(e => e[virtual ? "virtId" : "cardId"] === id)
-        || discard.find(e => e[virtual ? "virtId" : "cardId"] === id);
+      || discard.find(e => e[virtual ? "virtId" : "cardId"] === id);
       if (v) v.virtName = note;
     });
   }
@@ -327,6 +332,35 @@ QtObject {
     }
   }
 
+  function changeSkin(sender, data) {
+    const photoModel = getPhoto(Number(data[0]));
+    const skinData = photoModel.luaPlayer.skins;
+
+    photoModel.skins = skinData;
+
+    if (photoModel.playerid === dashboardId) {
+      if (skinData.main) {
+        Config.enabledSkins[photoModel.general] = skinData.main.name
+      } else delete Config.enabledSkins[photoModel.general]
+      if (skinData.deputy && photoModel.deputyGeneral) {
+        Config.enabledSkins[photoModel.deputyGeneral] = skinData.deputy.name
+      } else delete Config.enabledSkins[photoModel.deputyGeneral]
+
+      if (photoModel.photoItem) {
+        photoModel.photoItem?.changeSkinTimer?.start()
+      }
+    }
+  }
+
+  function syncSkins() {
+    for (let model of players) {
+      if (model.luaPlayer) {
+        const skinData = model.luaPlayer.skins
+        model.skins = skinData
+      }
+    }
+  }
+
   function playCard() {
     skippedUseEventIds = [];
     activate();
@@ -364,14 +398,14 @@ QtObject {
 
       // 不对自己使用的单目标锦囊牌无懈
       if (Config.noSelfNullification && nullfiData.effectFrom === Cpp.self.id &&
-        !Ltk.getCardData(nullfiData.effectCardId).multiple_targets) { 
+      !Ltk.getCardData(nullfiData.effectCardId).multiple_targets) {
         Lua.updateRequestUI("Button", "Cancel");
         return;
       }
 
       // 如果已忽略本轮无懈可击，那么忽略，除非即将对自己生效
-      if (nullfiData.effectTo !== Cpp.self.id && 
-        skippedUseEventIds.find(id => id === nullfiData.useEventId)) {
+      if (nullfiData.effectTo !== Cpp.self.id &&
+      skippedUseEventIds.find(id => id === nullfiData.useEventId)) {
         Lua.updateRequestUI("Button", "Cancel");
         return;
       }
@@ -427,6 +461,28 @@ QtObject {
     popupReady(Command.AskForChoices, data, model);
   }
 
+  function askForOptions(sender, data) {
+    const [ options, all_options, [ min_num, max_num], cancelable, skill_name, prompt, single ] = data;
+    root.prompt = prompt || `#AskForOption:::${skill_name}`;
+    activate();
+    const modelComponent = Qt.createComponent("LunarLtk.Models", "OptionsModel");
+    const model = modelComponent.createObject(null, {
+      options,
+      allOptions: all_options,
+      minNum: min_num,
+      maxNum: max_num,
+      cancelable,
+      skillName: skill_name,
+      prompt,
+      single,
+    });
+    model.accepted.connect(() => replyToServer(model.result));
+    model.rejected.connect(() => replyToServer([]));
+    root.options = model;
+    optionVisible = true;
+    optionReady(model)
+  }
+
   function askForGeneral(sender, data) {
     const [generals, n, no_convert, heg, rule, prompt, extra_data] = data;
     const modelComponent = Qt.createComponent("LunarLtk.Models.Popups", "ChooseGeneralModel");
@@ -434,7 +490,7 @@ QtObject {
       generals,
       choiceNum: n ?? 1,
       prompt: prompt ?? "",
-      convertDisabled: !!no_convert,
+      convertDisabled: !!Lua.client.getSettings("disableSameConvert") || !!no_convert,
       hegemony: !!heg,
       ruleType: rule ?? (heg? "heg_general_choose" : "askForGeneralsChosen"),
       extraData: extra_data ?? { n : n },
@@ -532,6 +588,33 @@ QtObject {
     }
   }
 
+  function miniGame(sender, data) {
+    // console.log("miniGame", data.type, JSON.stringify(data.data));
+    const game = data.type;
+    const dat = data.data;
+    const gdata = Ltk.getMiniGame(game, Cpp.self.id, JSON.stringify(dat));
+
+    const CustomDialogData = {
+      component: { url: gdata.qml_path + ".qml" },
+      model: gdata.model,
+      data: dat
+    };
+    activate();
+    if (CustomDialogData.model) {
+      // console.log("miniGame model creating", JSON.stringify(CustomDialogData.model));
+      const mod = Lua.createQmlObject(CustomDialogData.model);
+      const modFunc = mod.initialize;
+      if (typeof modFunc === "function") {
+        modFunc.call(mod);
+      }
+      mod.accepted.connect(() => replyToServer(mod.result));
+      mod.rejected.connect(() => replyToServer(""));
+      popupReady(Command.MiniGame, CustomDialogData, mod);
+    } else {
+      popupReady(Command.MiniGame, CustomDialogData, null);
+    }
+  }
+
   function fillAG(sender, data) {
     const ids = data[0];
 
@@ -557,6 +640,11 @@ QtObject {
     const general = Lua.tr(item.general);
 
     agModel.takeAG(general, cid);
+  }
+
+  function disableAG(sender, data) {
+    if (!agModel) return;
+    agModel.interactive = false;
   }
 
   // 蒋琬专属；啥时候删了这玩意啊？
@@ -593,6 +681,7 @@ QtObject {
     roomPage.addCallback(Command.EmptyRequest, activate);
     roomPage.addCallback(Command.CancelRequest, deActivate);
     roomPage.addCallback(Command.PlayerRunned, playerRunned);
+    roomPage.addCallback(Command.ChangeSkin, changeSkin);
 
     roomPage.addCallback(Command.SetCardMark, setCardMark);
     roomPage.addCallback(Command.GetPlayerHandcards, jiangwanHandler);
@@ -605,6 +694,7 @@ QtObject {
     roomPage.addCallback(Command.AskForUseCard, askForUseCard);
 
     roomPage.addCallback(Command.AskForChoices, askForChoices);
+    roomPage.addCallback(Command.AskForOptions, askForOptions);
     roomPage.addCallback(Command.AskForGeneral, askForGeneral);
     roomPage.addCallback(Command.AskForPoxi, askForPoxi);
     roomPage.addCallback(Command.AskForArrangeCards, askForArrangeCards);
@@ -613,10 +703,12 @@ QtObject {
     roomPage.addCallback(Command.AskForCardsAndChoice, askForCardsAndChoice);
     roomPage.addCallback(Command.GameOver, gameOver);
     roomPage.addCallback(Command.CustomDialog, customDialog);
+    roomPage.addCallback(Command.MiniGame, miniGame);
 
     roomPage.addCallback(Command.FillAG, fillAG);
     roomPage.addCallback(Command.AskForAG, askForAG);
     roomPage.addCallback(Command.TakeAG, takeAG);
+    roomPage.addCallback(Command.DisableAG, disableAG);
 
     roomPage.addCallback(Command.ReplyToServer, (_, data) => replyToServer(data));
   }
@@ -640,14 +732,16 @@ QtObject {
     buttons?.forEach(bdata => {
       switch (bdata.id) {
         case "OK":
-          okEnabled = bdata.enabled;
-          break;
+        okEnabled = bdata.enabled;
+        if (optionVisible && options) options.acceptable = bdata.enabled;
+        break;
         case "Cancel":
-          cancelEnabled = bdata.enabled;
-          break;
+        cancelEnabled = bdata.enabled;
+        if (optionVisible && options) options.cancelable = bdata.enabled;
+        break;
         case "End":
-          endButtonVisible = bdata.enabled;
-          break;
+        endButtonVisible = bdata.enabled;
+        break;
       }
     });
   }

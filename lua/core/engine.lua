@@ -40,6 +40,7 @@ function Engine:addSkill(skill)
     old.package and old.package.name or "unknown_pack",
     skill.package and skill.package.name or "unknown_pack"))
   end
+  assert(not skill.name:find(":", 1, true), "Skill [" .. skill.name .. "] contains colon, which is not allowed.")
   self.skills[skill.name] = skill
 
   for _, sk in ipairs{ skill, table.unpack(skill.related_skills) } do

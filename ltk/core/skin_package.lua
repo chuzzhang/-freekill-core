@@ -1,7 +1,14 @@
+--加载后的skin保存方式，一个武将的一个skin通过SkinContent类保存
+---@class SkinContent
+---@field name string
+---@field path string
+
 ---@class SkinPackageContent
+---@field enabled_generals table
+---@field skins table
 
 ---@class SkinPackageSpec
----@field path string
+---@field path string?
 ---@field content SkinPackageContent[]
 
 ---@class SkinPackage : SkinPackageSpec, Object

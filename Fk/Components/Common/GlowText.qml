@@ -15,6 +15,7 @@ Item {
   property alias wrapMode: textItem.wrapMode
   property alias elide: textItem.elide
   property alias lineHeight: textItem.lineHeight
+  property alias lineHeightMode: textItem.lineHeightMode
   property alias glow: glowItem
 
   width: textItem.implicitWidth

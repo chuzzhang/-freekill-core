@@ -18,6 +18,7 @@
 ---@field public audio_index? number @ 发动时是否播放特定编号台词
 ---@field public anim_type? AnimationType|string @ 发动时是否播放特定动画
 ---@field public history_branch? string @ 发动时是否将技能发动历史归类到某个分支
+---@field public no_switch? boolean @ 发动时是否不触发阴阳转换（仅用于转换技）
 
 --- 技能使用的数据
 ---@class SkillUseData: SkillUseDataSpec, TriggerData
