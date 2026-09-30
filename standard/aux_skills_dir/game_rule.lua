@@ -104,7 +104,7 @@ gameRule:addEffect(fk.GameOverJudge, {
       return false
     end
 
-    local winner = Fk.game_modes[room:getSettings('gameMode')]:getWinner(player)
+    local winner = room:getGameMode():getWinner(player)
     if winner ~= "" then
       room:gameOver(winner)
       return true
@@ -126,7 +126,7 @@ gameRule:addEffect(fk.BuryVictim, {
     if room.tag["SkipNormalDeathProcess"] or player.rest > 0 or (data.extra_data and data.extra_data.skip_reward_punish) then
       return false
     end
-    Fk.game_modes[room:getSettings('gameMode')]:deathRewardAndPunish(player, data.killer)
+    room:getGameMode():deathRewardAndPunish(player, data.killer)
   end,
 })
 

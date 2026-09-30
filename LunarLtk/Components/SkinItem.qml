@@ -2,15 +2,16 @@ import QtQuick
 import Qt5Compat.GraphicalEffects
 
 import Fk
+import Fk.Components.GameCommon
 import LunarLtk.Components.Photo
 
-Item {
+BasicItem {
   id: root
   width: childrenRect.width
   height: childrenRect.height
 
   property url source: ""
-  property bool selected: false
+  property alias text: skinName.text
 
   SkinArea {
     id: skinImg
@@ -37,7 +38,7 @@ Item {
 
   Text {
     id: skinName
-    text: Lua.tr(root.getSkinName())
+    text: ""
     font.pixelSize: 15
     font.family: "LiSu"
     font.bold: true
@@ -57,16 +58,8 @@ Item {
 
   HoverHandler {
     id: hover
+    enabled: root.selectable
     cursorShape: Qt.PointingHandCursor
-  }
-
-  function getSkinName() {
-    const url = source.toString();
-    const lastPart = url.slice(url.lastIndexOf("/") + 1);
-    if (lastPart.lastIndexOf(".") !== -1) {
-      return lastPart.slice(0, lastPart.lastIndexOf("."))
-    }
-    return lastPart
   }
 
 }

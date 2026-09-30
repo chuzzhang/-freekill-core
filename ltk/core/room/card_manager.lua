@@ -25,7 +25,7 @@ function CardManager:initCardManager()
   self.filtered_cards = {}
   self.printed_cards = {}
   self.next_print_card_id = -2
-  self.next_virt_card_id = 1
+  self.next_virt_card_id = 65536 -- 能塞这么多牌的牌局该反思一下了——
   self.card_marks = {}
 end
 

@@ -34,6 +34,7 @@
 ---@field public effects Skill[] @ 该技能对应的所有效果
 ---@field public effect_names string[] @ 该技能的各效果在记录使用纪录中所使用的名字，其中主效果的格式为`#技能名_main_skill`. 其余效果格式为`#技能名_序号_效果类型`
 ---@field public effect_spec_list ([any, any, any])[] @ 该技能对应的效果信息
+---@field public aux_spec_list ([any, any, any])[] @ 该技能所需的功能性主动技
 ---@field public ai_strategies { [AIStrategy]: AIStrategy[] }
 ---@field public tests fun(room: Room, me: ServerPlayer)[]
 ---@field public dynamicName fun(self: SkillSkeleton, player: Player, lang?: string): string @ 动态名称函数
@@ -55,6 +56,7 @@
 ---@field public addEffect fun(self: SkillSkeleton, key: "active", data: ActiveSkillSpec, attribute: SkillAttribute?): SkillSkeleton
 ---@field public addEffect fun(self: SkillSkeleton, key: "cardskill", data: CardSkillSpec, attribute: nil): SkillSkeleton
 ---@field public addEffect fun(self: SkillSkeleton, key: "viewas", data: ViewAsSkillSpec, attribute: SkillAttribute?): SkillSkeleton
+---@field public addAuxActiveSkill fun(self: SkillSkeleton, name: string, data: ActiveSkillSpec, attribute: SkillAttribute?): SkillSkeleton
 local SkillSkeleton = class("SkillSkeleton")
 
 
@@ -115,6 +117,7 @@ function SkillSkeleton:initialize(spec)
 
   self.related_skills = spec.related_skills or {}
   self.add_skills = spec.add_skills or {}
+  self.aux_spec_list = {}
 end
 
 function SkillSkeleton:addEffect(key, data, attribute)
@@ -152,6 +155,11 @@ function SkillSkeleton:addEffect(key, data, attribute)
   else
     table.insert(self.effect_spec_list, { key, attribute, data })
   end
+  return self
+end
+
+function SkillSkeleton:addAuxActiveSkill(name, data, attribute)
+  table.insert(self.aux_spec_list, { name, attribute, data })
   return self
 end
 
@@ -225,6 +233,23 @@ function SkillSkeleton:createSkill()
     main_skill.skeleton = self
   end
   return main_skill
+end
+
+---@return Skill[]
+function SkillSkeleton:createAuxSkills()
+  local skills = {}
+  for i, effect in ipairs(self.aux_spec_list) do
+    local name, attr, data = table.unpack(effect)
+    attr = attr or Util.DummyTable
+    local sk = Fk.skill_keys["active"][1](self, self, i, "active", attr, data)
+    if sk then
+      Fk:loadTranslationTable({ [name] = Fk:translate(self.name) }, Config.language)
+      sk.name = name
+      sk.skeleton = self
+      table.insert(skills, sk)
+    end
+  end
+  return skills
 end
 
 ---@class SkillAttribute
@@ -596,6 +621,9 @@ function SkillSkeleton:createActiveSkill(_skill, idx, key, attr, spec)
   end
 
   fk.readInteractionToSkill(skill, spec)
+  if spec.refresh_interaction and type(spec.refresh_interaction) == "function" then
+    skill.refresh_interaction = spec.refresh_interaction
+  end
   return skill
 end
 
@@ -662,6 +690,21 @@ function SkillSkeleton:createViewAsSkill(_skill, idx, key, attr, spec)
   if spec.feasible then skill.feasible = spec.feasible end
   if spec.on_use then skill.onUse = spec.on_use end
 
+  if spec.sub_cards then
+    skill.sub_data = spec.sub_cards
+    skill.sub_prompt = spec.sub_prompt or skill.prompt
+    skill.subCardFilter = spec.sub_card_filter
+    skill.immediate_sub = spec.immediate_sub
+
+    if not spec.feasible then
+      -- 继承不了一点
+      skill.feasible = function(self, player, targets, selected_cards)
+        return self:getMinCardNum(player) <= #selected_cards and
+          self:getMaxCardNum(player) >= #selected_cards
+      end
+    end
+  end
+
   if type(spec.pattern) == "string" then
     skill.pattern = spec.pattern
   end
@@ -715,6 +758,10 @@ function SkillSkeleton:createViewAsSkill(_skill, idx, key, attr, spec)
   if spec.prompt then skill.prompt = spec.prompt end
 
   fk.readInteractionToSkill(skill, spec)
+
+  if spec.refresh_interaction and type(spec.refresh_interaction) == "function" then
+    skill.refresh_interaction = spec.refresh_interaction
+  end
 
   if spec.before_use and type(spec.before_use) == "function" then
     skill.beforeUse = spec.before_use

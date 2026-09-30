@@ -212,7 +212,7 @@ function Skill:isPlayerSkill(player, includeModeSkill)
     not (
       self.cardSkill or
       self:isEquipmentSkill(player) or
-      self.name:endsWith("&") or
+      self.name:endsWith("&") or self.name == "recast" or
       (not includeModeSkill and skel.mode_skill)
     )
 end

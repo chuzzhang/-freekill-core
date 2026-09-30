@@ -274,11 +274,12 @@ W.PageBase {
       id: generalCard
       required property string modelData
       autoBack: false
-      dataModel: Ltk.createGeneralCardModel(modelData)
+      dataModel: Ltk.createGeneralCardModel(modelData, {showSkin: true})
       onClicked: {
         if (root.stat === 2) {
           root.doBanGeneral(modelData);
         } else {
+          generalDetailLoader.sourceItem = this;
           generalDetailLoader.item.general = modelData;
           generalDetailLoader.item.canSetAvatar = root.parent instanceof StackView;
           generalDetail.open();
@@ -419,6 +420,11 @@ W.PageBase {
       border.width: 1
     }
 
+    onClosed: {
+      generalDetailLoader.sourceItem.dataModel.refreshSkin()
+      generalDetailLoader.sourceItem = null
+    }
+
     Loader {
       id: generalDetailLoader
       width: parent.width / Config.winScale
@@ -426,6 +432,9 @@ W.PageBase {
       anchors.centerIn: parent
       scale: Config.winScale
       source: "GeneralDetailPage.qml"
+
+      property var sourceItem
+
       onLoaded: {
         item.onChangeGeneralDetailInside.connect(function(to_general) {
           generalDetailLoader.item.general = to_general;

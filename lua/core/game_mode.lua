@@ -75,8 +75,9 @@ end
 
 -- 判断什么时候可以投降的函数
 ---@param playedTime number @ 游戏时长（单位：秒）
+---@param player Player @ 发起投降的玩家
 ---@return table
-function GameMode:surrenderFunc(playedTime)
+function GameMode:surrenderFunc(playedTime, player)
   return {}
 end
 

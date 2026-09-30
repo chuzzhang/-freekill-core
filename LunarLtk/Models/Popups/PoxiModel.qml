@@ -49,38 +49,6 @@ QtObject {
     return Ltk.poxiFilter(poxiType, cid, selectedIds, cardData, extraData);
   }
 
-  function shuffleAndOk() {
-    const visibleData = extraData?.visible_data;
-
-    if (visibleData) {
-      let output = selectedIds.slice();
-      let invisible = [];
-      for (const cid in cardModels) {
-        if (visibleData[cid.toString()] == false) {
-          invisible.push(cid);
-        }
-      }
-
-      // 洗牌invisible
-      for (let i = invisible.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [invisible[i], invisible[j]] = [invisible[j], invisible[i]];
-      }
-
-      // 将output中属于invisible的，填入打乱后的invisible
-      let p = 0;
-      for (let i = 0; i < output.length; i++) {
-        if (invisible.includes(output[i])) {
-          output[i] = invisible[p++];
-        }
-      }
-
-      selectedIds = output;
-    }
-
-    accepted();
-  }
-
   function revertSelection() {
     let old_selected = selectedIds.slice();
     for (var i = 0; i < old_selected.length; ++i) {
@@ -88,7 +56,7 @@ QtObject {
       let model = cardModels[cid];
       model.selected = false;
     }
-    for (var cidstr in cardModels) {
+    for (const cidstr in cardModels) {
       let cid = Number(cidstr); // 为啥这里变成字符串了
       if (old_selected.indexOf(cid) === -1 && cardFilter(cid)) {
         let model = cardModels[cid];

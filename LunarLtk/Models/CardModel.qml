@@ -11,6 +11,10 @@ QtObject {
 
   property int cardId   // 游戏牌的id
   property int virtId   // 若cardId为0（虚拟卡），则另设id以便与ui卡一一对应
+
+  // 获得牌的*唯一ID*，如果是虚拟牌则返回virtId，否则返回cardId
+  readonly property int uniqueId: cardId === 0 ? virtId : cardId
+
   property var cardItem
 
   property string name: "slash" // 牌名

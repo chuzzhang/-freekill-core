@@ -20,9 +20,14 @@ local CardItem = (require 'ui_emu.common').CardItem
 ---@field public prompt string 提示信息
 ---@field public cancelable boolean 可否取消
 ---@field public extra_data UseExtraData|table 传入的额外信息
----@field public pendings integer[] 卡牌id数组
+---@field public pendings integer[] 正在选择的卡牌id数组
+---@field public selected_buffer? { cards: integer[], targets: integer[], interaction: any } 上次选择的缓存，用于二级选择时恢复
+---@field public sub_cards? Card[] 二级选择时的全体卡牌对象数组
+---@field public sub_pendings Card[] 二级选择时的卡牌**本体**数组
+---@field public sub_selection_flag boolean 是否是子选择（例如泛印牌的二级选择）
 ---@field public selected_targets integer[] 选择的目标
 ---@field public expanded_piles { [string]: integer[] } 用于展开/收起
+---@field public visible_pile integer[]
 ---@field public original_prompt string 最开始的提示信息；这种涉及技能按钮的需要这样一下
 local ReqActiveSkill = RequestHandler:subclass("ReqActiveSkill")
 
@@ -31,6 +36,7 @@ function ReqActiveSkill:initialize(player, data)
   self.scene = RoomScene:new(self)
 
   self.expanded_piles = {}
+  self.sub_selection_flag = false
 
   if data then
     self.skill_name = data[1]
@@ -44,9 +50,36 @@ function ReqActiveSkill:initialize(player, data)
   end
 end
 
+--- 自动选择唯一目标
+---@param req ReqActiveSkill
+local function autoSelectOnlyFeasibleTarget(req, data)
+  if data.autoTarget and not req:feasible() then
+    local tars = {}
+    for _, to in ipairs(req.room.alive_players) do
+      if req:targetValidity(to.id) then
+        table.insert(tars, to.id)
+        if #tars > 1 then return end
+      end
+    end
+    if #tars == 1 then
+      req.selected_targets = tars
+      req.scene:update("Photo", tars[1], { selected = true })
+      req:updateUnselectedTargets()
+      if req:feasible() then
+        req:updateButtons()
+      else
+        req.selected_targets = {}
+        req.scene:update("Photo", tars[1], { selected = false })
+        req:updateUnselectedTargets()
+      end
+    end
+  end
+end
+
 --- 初始化所有信息
 ---@param ignoreInteraction? boolean @ 是否不初始化Interaction，继承原数据
-function ReqActiveSkill:setup(ignoreInteraction)
+---@param data? table @ 出牌阶段发动的技能需要主动传入是否自动选择
+function ReqActiveSkill:setup(ignoreInteraction, data)
   local scene = self.scene
 
   local old_pendings = table.simpleClone(self.pendings or {})
@@ -66,10 +99,16 @@ function ReqActiveSkill:setup(ignoreInteraction)
     end
   end
 
-  -- FIXME: 偷懒了，让修改interaction时的全局刷新功能复用setup 总之这里写的很垃圾
-  if not ignoreInteraction then
-    scene:removeItem("Interaction", "1")
-    self:setupInteraction()
+  if self.sub_selection_flag then
+    scene:removeItem("Interaction", "1") -- 这里不考虑interaction
+  else
+    self.sub_cards = nil
+    self.sub_pendings = {}
+    -- FIXME: 偷懒了，让修改interaction时的全局刷新功能复用setup 总之这里写的很垃圾
+    if not ignoreInteraction then
+      scene:removeItem("Interaction", "1")
+      self:setupInteraction()
+    end
   end
 
   self:setPrompt(self.prompt)
@@ -83,7 +122,9 @@ function ReqActiveSkill:setup(ignoreInteraction)
   self:updateUnselectedCards()
   self:updateUnselectedTargets()
 
-  if ignoreInteraction then -- 修改Interaction时重新筛选一次原选择牌
+  self:visualizePile()
+
+  if ignoreInteraction and #(self.visible_pile or {}) == 0 then -- 修改Interaction时重新筛选一次原选择牌
     for _, cid in ipairs(old_pendings) do
       local item -- 必须确定此牌是否还在UI内
       for _cid, _item in pairs(scene:getAllItems("CardItem")) do
@@ -99,8 +140,17 @@ function ReqActiveSkill:setup(ignoreInteraction)
     end
   end
 
+  if data then
+    autoSelectOnlyFeasibleTarget(self, data)
+  end
+
+  self:refreshInteraction()
   self:updateButtons()
   self:updatePrompt()
+end
+
+local function getCardByVirtId(cards, id)
+  return table.find(cards, function(c) return c.id == id or c.virt_id == id end)
 end
 
 function ReqActiveSkill:finish()
@@ -108,16 +158,28 @@ function ReqActiveSkill:finish()
 end
 
 --- 更新主动技的提示（使用卡牌也会走这步）
----@param skill ActiveSkill
+---@param skill ActiveSkill | ViewAsSkill @ 技能对象
 ---@param selected_cards? integer[] @ 选择的牌
 function ReqActiveSkill:setSkillPrompt(skill, selected_cards)
   local default_prompt = ("#UseSkill:::" .. skill.name) -- 默认提示
   local prompt = ""
-  if type(skill.prompt) == "function" then
-    prompt = skill:prompt(self.player, selected_cards or self.pendings,
-      table.map(self.selected_targets, Util.Id2PlayerMapper), self.extra_data or {})
-  elseif type(skill.prompt) == "string" then
-    prompt = skill.prompt
+  if self.sub_selection_flag then
+    if type(skill.sub_prompt) == "function" then
+      prompt = skill:sub_prompt(self.player,
+        self.selected_buffer.cards, table.map(self.selected_buffer.targets, Util.Id2PlayerMapper),
+        self.sub_pendings, table.map(self.selected_buffer.targets or {}, Util.Id2PlayerMapper),
+        self.extra_data or {})
+    elseif type(skill.sub_prompt) == "string" then
+      prompt = skill.sub_prompt
+    end
+  end
+  if prompt == "" then
+    if type(skill.prompt) == "function" then
+      prompt = skill:prompt(self.player, selected_cards or self.pendings,
+        table.map(self.selected_targets, Util.Id2PlayerMapper), self.extra_data or {})
+    elseif type(skill.prompt) == "string" then
+      prompt = skill.prompt
+    end
   end
 
   -- 被动询问使用主动技时，例如询问弃牌，求询问使用牌
@@ -132,7 +194,7 @@ function ReqActiveSkill:setSkillPrompt(skill, selected_cards)
 end
 
 function ReqActiveSkill:updatePrompt()
-  local skill = Fk.skills[self.skill_name]
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   if skill then
     self:setSkillPrompt(skill)
   else
@@ -142,7 +204,7 @@ end
 
 --- 初始化Interaction
 function ReqActiveSkill:setupInteraction()
-  local skill = Fk.skills[self.skill_name]---@type ActiveSkill
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   if skill and skill.interaction then
     skill.interaction.data = nil
     local interaction = skill:interaction(self.player)
@@ -151,6 +213,7 @@ function ReqActiveSkill:setupInteraction()
     end
     skill.interaction.data = interaction.default or interaction.default_choice or nil -- FIXME
     -- 假设只有1个interaction （其实目前就是这样）
+    skill.interaction.spec = table.simpleClone(interaction)
     local i = Interaction:new(self.scene, "1", interaction)
     i.skill_name = interaction.skill_name or self.skill_name
     self.scene:addItem(i)
@@ -160,11 +223,11 @@ end
 
 --- 在手牌区展开一些牌，注可以和已有的牌重复
 ---@param pile string @ 牌堆名，用于标识
----@param extra_ids? integer[] @ 额外的牌id数组
+---@param extra_ids? integer|Card[] @ 额外的牌id数组
 ---@param extra_footnote? string @ 卡牌底注
 ---@return integer[] @ 展开的牌id数组
 function ReqActiveSkill:expandPile(pile, extra_ids, extra_footnote)
-  if self.expanded_piles[pile] ~= nil then return {} end
+  if pile ~= "_extra" and self.expanded_piles[pile] ~= nil then return {} end
   local ids, footnote
   local player = self.player
 
@@ -176,13 +239,21 @@ function ReqActiveSkill:expandPile(pile, extra_ids, extra_footnote)
     ids = extra_ids
     footnote = extra_footnote
     -- self.extra_cards = exira_ids
+    self.expanded_piles[pile] = self.expanded_piles[pile] or {}
+    table.insertTable(self.expanded_piles[pile],ids)
+  elseif pile == "_sub_selection" and extra_ids then
+    -- 二级菜单的expand_pile必为实体卡牌表……
+    self.expanded_piles["_sub_selection"] = table.map(extra_ids, function(c) return Fk:currentRoom():getVirtCardId(c) end)
+    ids = extra_ids
+    footnote = self.skill_name -- 只写一个技能名
   else
     -- expand_pile为私人牌堆名的情况
     -- FIXME: 可能存在的浅拷贝
     ids = extra_ids or table.simpleClone(player:getPile(pile))
     footnote = extra_footnote or pile
   end
-  self.expanded_piles[pile] = ids
+
+  self.expanded_piles[pile] = self.expanded_piles[pile] or ids
 
   local scene = self.scene
   for _, id in ipairs(ids) do
@@ -216,9 +287,15 @@ end
 
 -- 展开额外牌堆（即将所有不在手牌区的牌在手牌区域展开）
 function ReqActiveSkill:expandPiles()
-  local skill = Fk.skills[self.skill_name]---@type ActiveSkill | ViewAsSkill
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   local player = self.player
   if not skill then return end
+
+  -- 二级菜单无视一切展开额外牌堆
+  if self.sub_selection_flag then
+    self:expandPile("_sub_selection", self.sub_cards)
+    return
+  end
 
   -- TODO: 为了缔盟的无奈之法，应该多次判定是否展开
   local expand_equip = skill.include_equip
@@ -270,10 +347,10 @@ function ReqActiveSkill:expandPiles()
   elseif type(pile) == "table" then
     ids = table.filter(pile, function(id) return not table.contains(cardsExpanded, id) end)
   end
-  if ids == nil or #ids < 1 then return end
+  if ids == nil or next(ids) == nil then return end
   local room = Fk:currentRoom()
-  local areas = { 
-    [Card.DrawPile] = "pile_draw", 
+  local areas = {
+    [Card.DrawPile] = "pile_draw",
     [Card.Processing] = "processing_area",
     [Card.DiscardPile] = "pile_discard"
   }
@@ -290,8 +367,61 @@ function ReqActiveSkill:expandPiles()
   if areas[area] then
     self:expandPile("_extra", ids, areas[area])
   else
-    self:expandPile("_extra", ids, self.extra_data and self.extra_data.skillName or self.skill_name)
+    local owner_pile, owners = {}, {}
+    for _, id in ipairs(ids) do
+      local owner = room:getCardOwner(id)
+      local owner_key = owner and owner:toLogString() or ""
+      owner_pile[owner_key] = table.insertIfNeed(owners, owner_key) and {} or owner_pile[owner_key]
+      table.insert(owner_pile[owner_key], id)
+    end
+    for _, owner_key in ipairs(owners) do
+      self:expandPile("_extra", owner_pile[owner_key], owner_key ~= "" and owner_key or
+        (self.extra_data and self.extra_data.skillName or self.skill_name))
+    end
   end
+end
+
+--- 刷新一下当前可见牌
+function ReqActiveSkill:visualizePile()
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
+  if not skill then return end
+  local player = self.player
+
+  -- 因为visible_pile是纯ui方案，与操作合法性无关，故不需要scene参与，直接改RequestHandler.change
+  self.change = self.change or {}
+
+  -- 直接在这里进行屏蔽手牌操作
+  if self.sub_selection_flag then
+    self.change["visible_cards"] = table.map(self.sub_cards, function(c)
+      if c.id == 0 then
+        return c.virt_id
+      else
+        return c.id
+      end
+    end) -- 二级选择时visible_pile改为全体手牌
+    return
+  end
+
+  local pile = skill.visible_pile or {}
+  local _pile
+  if type(pile) == "function" then
+    _pile = pile(skill, player)
+  else
+    _pile = pile
+  end
+  if type(_pile) == "table" then
+    self.visible_pile = _pile
+  elseif type(_pile) == "string" then
+    if _pile == "_expand_pile" then
+      self.visible_pile = self.expanded_piles["_extra"] or {}
+    else
+      self.visible_pile = player:getPile(_pile)
+    end
+  else
+    self.visible_pile = {}
+  end
+
+  self.change["visible_cards"] = self.visible_pile
 end
 
 --- 判断确认键是否可用
@@ -300,25 +430,38 @@ function ReqActiveSkill:feasible()
   local player = self.player
   local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   if not skill then return false end
-  local ret
+  local card -- 因为有多种情况，所以需要缓存
+  local ret = false
   local targets = table.map(self.selected_targets, Util.Id2PlayerMapper)
   if skill:isInstanceOf(ActiveSkill) then
     ---@cast skill ActiveSkill
     ret = skill:feasible(player, targets, self.pendings)
   elseif skill:isInstanceOf(ViewAsSkill) then
     ---@cast skill ViewAsSkill
-    local card = skill:viewAs(player, self.pendings)
+    card = self:getUsingCard()
     if card then
       ret = card:getSkill(player):feasible(player, targets, { card.id }, card)
-    else
-      ret = skill:feasible(player, targets, self.pendings)
+    elseif not self.sub_selection_flag then -- 如果是二级选择的场合就全权交给viewAs处理了
+      ret = self.sub_cards and skill:feasible(player, targets, self.pendings) -- 因为生成函数，sub_cards可能为空，但若为数组则一定有元素
     end
   end
   return not not ret
 end
 
 function ReqActiveSkill:isCancelable()
-  return not not self.cancelable
+  return self.sub_selection_flag or not not self.cancelable
+end
+
+--- 获得视为技所视为的虚拟牌
+---@return Card|nil
+function ReqActiveSkill:getUsingCard()
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
+  if not (skill and skill:isInstanceOf(ViewAsSkill)) then return nil end
+  if self.sub_selection_flag then
+    return skill:viewAs(self.player, self.selected_buffer.cards, self.sub_pendings)
+  else
+    return skill:viewAs(self.player, self.pendings)
+  end
 end
 
 --- 判断一张牌是否能被主动技或转化技点亮（注，使用实体牌不用此函数判断
@@ -327,6 +470,10 @@ end
 function ReqActiveSkill:cardValidity(cid)
   local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   if not skill then return false end
+  if self.sub_selection_flag then -- 二级选择时单独考虑
+    if not getCardByVirtId(self.sub_cards, cid) then return false end -- 只能选择二级选择的牌
+    return not not skill:subCardFilter(self.player, getCardByVirtId(self.sub_cards, cid), self.sub_pendings, self.selected_buffer.cards, self.extra_data)
+  end
   return not not skill:cardFilter(self.player, cid, self.pendings or {}, table.map(self.selected_targets or {}, Util.Id2PlayerMapper))
 end
 
@@ -336,12 +483,17 @@ end
 function ReqActiveSkill:targetValidity(pid)
   local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   if not skill then return false end
-  local card -- 姑且接一下(雾)
+  local card -- 因为有多种情况，所以需要缓存
   if skill:isInstanceOf(ViewAsSkill) then
     ---@cast skill ViewAsSkill
-    card = skill:viewAs(self.player, self.pendings)
+    card = self:getUsingCard()
     if card then
       skill = card:getSkill(self.player)
+    else
+      local sub_data = type(skill.sub_data) == "function" and skill:sub_data(self.player, self.pendings) or skill.sub_data
+      if sub_data then
+        return false -- 需要二级选择的技能，暂时不考虑targetFilter
+      end
     end
   end
   local room = Fk:currentRoom()
@@ -350,9 +502,63 @@ function ReqActiveSkill:targetValidity(pid)
   return not not skill:targetFilter(self.player, p, selected, self.pendings, card, self.extra_data)
 end
 
+-- 获得二级选择的卡牌
+function ReqActiveSkill:makeSubCards()
+  self.sub_cards = nil
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
+  if not skill or not skill.sub_data then return end
+  local sub = skill.sub_data
+  if type(sub) == "function" then
+    self.sub_cards = sub(skill, self.player, self.pendings, skill.interaction and skill.interaction.data)
+  else
+    self.sub_cards = {}
+    for _, card_name in ipairs(sub) do
+      if Fk.all_card_types[card_name] ~= nil then
+        table.insertIfNeed(self.sub_cards, Fk:cloneCard(card_name))
+      end
+    end
+  end
+  if self.sub_cards == nil or not next(self.sub_cards) then return end
+end
+
+--- （取消专属）更新是否需要立刻退出二级菜单
+function ReqActiveSkill:checkExitSub()
+  if not self.sub_selection_flag then return end
+  if #self.pendings == 0 and #self.selected_targets == 0 then
+    local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
+    if skill and skill.immediate_sub then
+      local old_pendings = table.simpleClone(self.selected_buffer.cards)
+      local old_targets = table.map(self.selected_buffer.targets, Util.Id2PlayerMapper)
+      local old_interaction = self.selected_buffer.interaction
+      local sub = skill.sub_data
+      if type(sub) == "function" then
+        sub = sub(skill, self.player,  old_pendings, old_targets, old_interaction)
+      end
+      if sub then
+        if skill:feasible(self.player, old_pendings, old_targets) then
+          return
+        end
+      end
+    end
+    self:doCancelButton()
+  end
+end
+
 --- 更新按钮的状态
 function ReqActiveSkill:updateButtons()
   local scene = self.scene
+
+  self:makeSubCards() -- 生成二级选择的卡牌
+  local isOk = self:feasible()
+  if isOk and not self.sub_selection_flag and self.sub_cards then
+    local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
+    if skill and skill.immediate_sub then
+      self.change = self.change or {} -- 移除_new/_delete的状态，毕竟马上就要重新收牌堆了
+      self.change._new = nil
+      self.change._delete = nil
+      self:doOKButton()
+    end
+  end
   scene:update("Button", "OK", { enabled = self:feasible() })
   scene:update("Button", "Cancel", { enabled = self:isCancelable() })
 end
@@ -413,31 +619,77 @@ function ReqActiveSkill:initiateTargets()
 end
 
 --- 更新interaction数据
-function ReqActiveSkill:updateInteraction(data)
-  local skill = Fk.skills[self.skill_name]
+function ReqActiveSkill:updateInteraction(data, ignoreSetup)
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   if skill and skill.interaction then
     skill.interaction.data = data
     self.scene:update("Interaction", "1", { data = data })
-    ReqActiveSkill.setup(self, true) -- interaction变动后需复原
+    if not ignoreSetup then
+      ReqActiveSkill.setup(self, true) -- interaction变动后需复原
+    end
   end
 end
 
+---@class ReplyFormatActive: table
+---@field public card_objs? Card[] @ 选中的虚拟牌对象数组
+---@field public card { skill: string, subcards: integer[] } @ 选中的牌信息
+---@field public targets integer[] @ 选中的目标id数组
+---@field public interaction_data? any @ 选中的interaction数据
+---@field public special_skill? string @ 选中的技能名（如重铸）
+
 function ReqActiveSkill:doOKButton()
-  local skill = Fk.skills[self.skill_name]
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
   local cardstr = {
     skill = self.skill_name,
     subcards = self.pendings
   }
-  local reply = {
-    card = cardstr,
-    targets = self.selected_targets or {},
-    --special_skill = roomScene.getCurrentCardUseMethod(),
-    interaction_data = skill and skill.interaction and skill.interaction.data,
-  }
-  if self.selected_card then
-    reply.special_skill = self.skill_name
+  local reply
+  if self.sub_selection_flag then
+    cardstr.subcards = self.selected_buffer.cards
+    reply = {
+      card_objs = self.sub_pendings,
+      card = cardstr,
+      targets = self.selected_targets or {},
+      --special_skill = roomScene.getCurrentCardUseMethod(),
+      interaction_data = skill and skill.interaction and skill.interaction.data,
+    }
+    if self.selected_card then
+      reply.special_skill = self.skill_name
+    end
+  else
+    if skill.sub_data then
+      self.selected_buffer = {
+        cards = table.simpleClone(self.pendings),
+        targets = table.simpleClone(self.selected_targets),
+        interaction = skill and skill.interaction and skill.interaction.data,
+      }
+      local sub = skill.sub_data
+      if type(sub) == "function" then
+        self.sub_cards = sub(skill, self.player, self.pendings, skill.interaction and skill.interaction.data)
+      else
+        self.sub_cards = {}
+        for _, card_name in ipairs(sub) do
+          if Fk.all_card_types[card_name] ~= nil then
+            table.insertIfNeed(self.sub_cards, Fk:cloneCard(card_name))
+          end
+        end
+      end
+      table.forEach(self.sub_cards, function(c) Fk:currentRoom():getVirtCardId(c) end)
+      self.sub_selection_flag = true
+      ReqActiveSkill.setup(self, true) -- 需复原
+    else
+      reply = {
+        card = cardstr,
+        targets = self.selected_targets or {},
+        --special_skill = roomScene.getCurrentCardUseMethod(),
+        interaction_data = skill and skill.interaction and skill.interaction.data,
+      }
+      if self.selected_card then
+        reply.special_skill = self.skill_name
+      end
+    end
   end
-  if ClientInstance then
+  if reply and ClientInstance then
     ClientInstance:notifyUI("ReplyToServer", reply)
   else
     return reply
@@ -445,6 +697,11 @@ function ReqActiveSkill:doOKButton()
 end
 
 function ReqActiveSkill:doCancelButton()
+  if self.sub_selection_flag then
+    self.sub_selection_flag = false
+    ReqActiveSkill.setup(self, true) -- 需复原
+    return
+  end
   if ClientInstance then
     ClientInstance:notifyUI("ReplyToServer", "__cancel")
   else
@@ -458,18 +715,39 @@ function ReqActiveSkill:selectCard(cardid, data)
   local selected = data.selected
   scene:update("CardItem", cardid, data)
 
-  -- 若选中，则加入已选列表；若取消选中，则其他牌可能无法满足可选条件，需额外判断
-  -- 例如周善 选择包括“安”在内的任意张手牌交出
-  if selected then
-    table.insert(self.pendings, cardid)
+  if self.sub_selection_flag then
+    -- 二级菜单选的是虚拟牌
+    if selected then
+      table.insertIfNeed(self.sub_pendings, getCardByVirtId(self.sub_cards, cardid))
+      table.insertIfNeed(self.pendings, cardid)
+    else
+      local old_pendings = table.simpleClone(self.pendings)
+      self.pendings = {}
+      self.sub_pendings = {}
+      for _, cid in ipairs(old_pendings) do
+        local ret = cid ~= cardid and self:cardValidity(cid)
+        if ret then
+          table.insertIfNeed(self.sub_pendings, getCardByVirtId(self.sub_cards, cid))
+          table.insert(self.pendings, cid)
+        end
+        -- 因为这里而变成未选中的牌稍后将更新一次enable 但是存在着冗余的cardFilter调用
+        scene:update("CardItem", cid, { selected = not not ret })
+      end
+    end
   else
-    local old_pendings = table.simpleClone(self.pendings)
-    self.pendings = {}
-    for _, cid in ipairs(old_pendings) do
-      local ret = cid ~= cardid and self:cardValidity(cid)
-      if ret then table.insert(self.pendings, cid) end
-      -- 因为这里而变成未选中的牌稍后将更新一次enable 但是存在着冗余的cardFilter调用
-      scene:update("CardItem", cid, { selected = not not ret })
+    -- 若选中，则加入已选列表；若取消选中，则其他牌可能无法满足可选条件，需额外判断
+    -- 例如周善 选择包括“安”在内的任意张手牌交出
+    if selected then
+      table.insert(self.pendings, cardid)
+    else
+      local old_pendings = table.simpleClone(self.pendings)
+      self.pendings = {}
+      for _, cid in ipairs(old_pendings) do
+        local ret = cid ~= cardid and self:cardValidity(cid)
+        if ret then table.insert(self.pendings, cid) end
+        -- 因为这里而变成未选中的牌稍后将更新一次enable 但是存在着冗余的cardFilter调用
+        scene:update("CardItem", cid, { selected = not not ret })
+      end
     end
   end
 
@@ -509,50 +787,55 @@ function ReqActiveSkill:selectTarget(playerid, data)
   -- 重新筛选原原卡合法性
   local old_pendings = table.simpleClone(self.pendings)
   self.pendings = {}
-  for _, cid in ipairs(old_pendings) do
-    local ret = self:cardValidity(cid)
-    if ret then table.insert(self.pendings, cid) end
-    scene:update("CardItem", cid, { selected = not not ret })
+  if self.sub_selection_flag then
+    self.sub_pendings = {}
+    for _, cid in ipairs(old_pendings) do
+        local ret = self:cardValidity(cid)
+        if ret then
+          table.insertIfNeed(self.sub_pendings, getCardByVirtId(self.sub_cards, cid))
+          table.insert(self.pendings, cid)
+        end
+    end
+  else
+    for _, cid in ipairs(old_pendings) do
+      local ret = self:cardValidity(cid)
+      if ret then table.insert(self.pendings, cid) end
+      scene:update("CardItem", cid, { selected = not not ret })
+    end
   end
   self:updateUnselectedCards()
   self:updateButtons()
 end
 
---- 自动选择唯一目标
----@param req ReqActiveSkill
-local function autoSelectOnlyFeasibleTarget(req, data)
-  if data.autoTarget and not req:feasible() then
-    local tars = {}
-    for _, to in ipairs(req.room.alive_players) do
-      if req:targetValidity(to.id) then
-        table.insert(tars, to.id)
-        if #tars > 1 then return end
-      end
-    end
-    if #tars == 1 then
-      req.selected_targets = tars
-      req.scene:update("Photo", tars[1], { selected = true })
-      req:updateUnselectedTargets()
-      if req:feasible() then
-        req:updateButtons()
-      else
-        req.selected_targets = {}
-        req.scene:update("Photo", tars[1], { selected = false })
-        req:updateUnselectedTargets()
-      end
+-- 刷新interaction（不是重新加载，区别于updateInteraction）
+function ReqActiveSkill:refreshInteraction()
+  local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill|ViewAsSkill]]
+  if not skill or not skill.refresh_interaction then return end
+  if skill and skill.interaction then
+    local refresh_data = skill:refresh_interaction(
+      self.player, self.pendings or {},
+      table.map(self.selected_targets,
+      Util.Id2PlayerMapper),
+      self.extra_data or {})
+    if refresh_data ~= nil then
+      self.scene:update("Interaction", "1", { refresh_data = refresh_data })
     end
   end
 end
 
 function ReqActiveSkill:update(elemType, id, action, data)
   if elemType == "Button" then
-    if id == "OK" then self:doOKButton()
-    elseif id == "Cancel" then self:doCancelButton() end
-    return true
+    local ret = false
+    if id == "OK" then ret = not not self:doOKButton()
+    elseif id == "Cancel" then ret = not not self:doCancelButton() end
+    return ret
   elseif elemType == "CardItem" then
     self:selectCard(id, data)
     self:initiateTargets()
     autoSelectOnlyFeasibleTarget(self, data)
+    if data and data.selected == false then
+      self:checkExitSub()
+    end
     -- 双击卡牌使用卡牌
     --[[
     if action == "doubleClick" and data.doubleClickUse then
@@ -577,6 +860,9 @@ function ReqActiveSkill:update(elemType, id, action, data)
     if #self.selected_targets == 0 then
       autoSelectOnlyFeasibleTarget(self, data)
     end
+    if data and data.selected == false then
+      self:checkExitSub()
+    end
     -- 双击目标使用卡牌
     --[[
     if action == "doubleClick" and data.doubleClickUse then
@@ -593,9 +879,16 @@ function ReqActiveSkill:update(elemType, id, action, data)
     end
     ]]
   elseif elemType == "Interaction" then
-    self:updateInteraction(data)
+    local ignore = action == "finish"
+    self:updateInteraction(data, ignore)
+  end
+
+  -- 防止冗余计算
+  if elemType ~= "Interaction" then
+    self:refreshInteraction()
   end
   self:updatePrompt()
+  self:visualizePile()
 end
 
 return ReqActiveSkill

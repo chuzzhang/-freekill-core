@@ -3,7 +3,9 @@ import QtQuick.Dialogs
 import QtQuick.Window
 import Fk
 
-Window {
+import org.kde.kirigami as Kirigami
+
+Kirigami.ApplicationWindow {
   id: root
   width: 1200
   height: 540
@@ -21,10 +23,11 @@ Window {
   RootPage {
     id: mainWindow
 
-    width: (parent.width / parent.height < 1200 / 540) ? 1200 : 540 * parent.width / parent.height
-    height: (parent.width / parent.height > 1200 / 540) ? 540 : 1200 * parent.height / parent.width
-    scale: parent.width / width
-    anchors.centerIn: parent
+    anchors.fill: parent
+    // width: (parent.width / parent.height < 1200 / 540) ? 1200 : 540 * parent.width / parent.height
+    // height: (parent.width / parent.height > 1200 / 540) ? 540 : 1200 * parent.height / parent.width
+    // scale: parent.width / width
+    // anchors.centerIn: parent
 
     onScaleChanged: Config.winScale = scale;
     onConfLoaded: {

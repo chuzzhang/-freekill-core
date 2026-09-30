@@ -13,7 +13,7 @@ QtObject {
   property real winY
   property real winWidth
   property real winHeight
-  property real winScale
+  property real winScale: 1.0
   property var conf: ({})
   property string lastLoginServer
   property list<string> preferredButtons: []
@@ -53,6 +53,7 @@ QtObject {
   property int preferredTimeout
 
   property bool enableSuperDrag
+  property bool hideScreenName
 
   property bool firstRun: true
 
@@ -170,6 +171,7 @@ QtObject {
     noSelfNullification = conf.noSelfNullification ?? false;
     preferredTimeout = conf.preferredTimeout ?? 15;
     enableSuperDrag = conf.enableSuperDrag ?? false;
+    hideScreenName = conf.hideScreenName ?? false;
     firstRun = conf.firstRun ?? true;
     // disabledGenerals = conf.disabledGenerals ?? [];
     // disableGeneralSchemes = conf.disableGeneralSchemes ?? [ disabledGenerals ];
@@ -221,6 +223,7 @@ QtObject {
     conf.noSelfNullification = noSelfNullification;
     conf.preferredTimeout = preferredTimeout;
     conf.enableSuperDrag = enableSuperDrag;
+    conf.hideScreenName = hideScreenName;
     conf.firstRun = firstRun;
     // conf.disabledGenerals = disabledGenerals;
     // conf.disableGeneralSchemes = disableGeneralSchemes;

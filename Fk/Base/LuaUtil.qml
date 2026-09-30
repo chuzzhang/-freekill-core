@@ -173,7 +173,12 @@ QtObject {
   }
 
   function resetClientLua() {
-    return call("ResetClientLua");
+    call("ResetClientLua");
+
+    // 这几个用changed信号绑定的属性危害不浅！
+    setObserving(Config.observing);
+    setReplaying(Config.replaying);
+    setReplayingShowCards(Config.replayingShowCards);
   }
 
   function getCompNum() {

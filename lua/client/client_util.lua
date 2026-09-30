@@ -29,12 +29,27 @@ function ResetClientLua()
   local self = ClientInstance
   local client_klass = self.class --[[@as Client]]
   local cpp_client = self.client
+
+  -- 最优先处理自己是旁观者时的返回房间
+  if self.observing and self.observer_setup_data then
+    local t = self.observer_setup_data
+    local selfp = cpp_client:addPlayer(t[1], t[2], t[3])
+    selfp:addTotalGameTime(Self.player:getTotalGameTime())
+    cpp_client:changeSelf(t[1])
+    Self = self:createPlayer(selfp)
+    self.observer_setup_data = nil
+  end
   local cpp_players = table.map(self.players, function(p)
     return { p.player, p.ready, p.owner }
   end)
   -- FIXME 擦屁股之Qt版server没给机器人发removePlayer
   cpp_players = table.filter(cpp_players, function(arr)
     return arr[1]:getId() > 0
+  end)
+
+  -- 保留旁观者列表（结构为 {0, player, id}），供返回房间旁观区域使用
+  local observers = table.map(self.observers or {}, function(t)
+    return { t[3], t[2]:getScreenName(), t[2]:getAvatar(), false, t[2]:getTotalGameTime() }
   end)
 
   local _data = self.enter_room_data
@@ -46,13 +61,35 @@ function ResetClientLua()
     cp.owner = p[3]
     return cp
   end)
-  Self = self:getPlayerById(Self.id)
+  -- 注意如果在开战前的ob的话会取不到Self
+  Self = self:getPlayerById(Self.id) or Self
+
+  -- 恢复旁观者列表
+  self.observers = table.map(observers, function(o)
+    local id, name, avatar, gameTime = o[1], o[2], o[3], o[5]
+    local player = {
+      getId = function() return id end,
+      getScreenName = function() return name end,
+      getAvatar = function() return avatar end,
+      getState = function() return fk.Player_Online end,
+      getTotalGameTime = function() return gameTime end,
+    }
+    return { 0, player, id }
+  end)
 
   self.enter_room_data = _data;
   local data = cbor.decode(_data)
   self.capacity = data[1]
   self.timeout = data[2]
   self.settings = data[3]
+
+  -- 刷新 _players / _observers，供等待界面初始化使用
+  local settings = self.settings
+  settings._players = table.map(cpp_players, function(p)
+    local cp = p[1]
+    return { cp:getId(), cp:getScreenName(), cp:getAvatar(),
+             p[2] == true, cp:getTotalGameTime(), p[3] == true }
+  end)
 
   -- FIXME 怎么混入三国杀要素了，非常坏
   self.disabled_packs = ClientInstance.disabled_packs
@@ -115,7 +152,7 @@ function CheckSurrenderAvailable()
   local curMode = ClientInstance:getSettings('gameMode')
   local mode = Fk.game_modes[curMode] or Fk.game_modes["aaa_role_mode"]
   local playedTime = os.time() - ClientInstance.gameStartTime
-  return mode:surrenderFunc(playedTime)
+  return mode:surrenderFunc(playedTime, Self)
 end
 
 function SaveRecord()
@@ -186,9 +223,8 @@ end
 
 function GetPlayersAndObservers()
   local self = ClientInstance
-  local players = table.connect(self.observers, self.players)
   local ret = {}
-  for _, p in ipairs(players) do
+  for _, p in ipairs(self.players) do
     local state = p.player:getState()
     if state == fk.Player_Run and p.dead then
       state = fk.Player_Offline
@@ -201,6 +237,19 @@ function GetPlayersAndObservers()
       observing = table.contains(self.observers, p),
       state = state,
       avatar = p.player:getAvatar(),
+      seat = p.seat,
+    })
+  end
+  for _, p in ipairs(self.observers) do
+    table.insert(ret, {
+      id = p[2]:getId(),
+      general = "",
+      deputy = "",
+      name = p[2]:getScreenName(),
+      observing = true,
+      state = fk.Player_Online,
+      avatar = p[2]:getAvatar(),
+      seat = -1,
     })
   end
   return ret

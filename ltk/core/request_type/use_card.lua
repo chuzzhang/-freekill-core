@@ -17,8 +17,9 @@ function ReqUseCard:updatePrompt()
 end
 
 function ReqUseCard:skillButtonValidity(name)
+  if self.sub_selection_flag then return false end -- 处于二级选择时不允许切换技能
   local player = self.player
-  local skill = Fk.skills[name]---@type ViewAsSkill
+  local skill = Fk.skills[name]---@cast skill ViewAsSkill
   return
     skill:isInstanceOf(ViewAsSkill) and
     skill:enabledAtResponse(player, false) and
@@ -27,24 +28,26 @@ function ReqUseCard:skillButtonValidity(name)
     not table.contains(self.disabledSkillNames or {}, name)
 end
 
---- 一张牌能否被点亮
----@param cid integer
+--- 一张牌能否被点亮（包括正在被点选的实体牌）
+---@param cid integer|Card
+---@return boolean
 function ReqUseCard:cardValidity(cid)
   if self.skill_name then return ReqActiveSkill.cardValidity(self, cid) end
-  local card = cid ---@type Card
+  local card = cid
   if type(cid) == "number" then card = Fk:getCardById(cid) end
   return not not self:cardFeasible(card)
 end
 
 function ReqUseCard:targetValidity(pid)
   if self.skill_name then
+    -- 本部分只在fix_user处进行改造，其他与ReqActiveSkill同名方法一致
     local skill = Fk.skills[self.skill_name] --[[@as ActiveSkill | ViewAsSkill]]
     if not skill then return false end
-    local card -- 姑且接一下(雾)
+    local card -- 承接参数用
     local user = self.player
     if skill:isInstanceOf(ViewAsSkill) then
       ---@cast skill ViewAsSkill
-      card = skill:viewAs(self.player, self.pendings)
+      card = self:getUsingCard()
       --不要在当前转化卡牌不可用的情况下开启选目标
       if card and self:cardFeasible(card) then
         skill = card:getSkill(user)
@@ -79,12 +82,10 @@ function ReqUseCard:cardFeasible(card)
   if not player:prohibitUse(card) and exp:match(card) then
     return (card.is_passive and not (self.extra_data or Util.DummyTable).not_passive) or player:canUse(card, self.extra_data)
   else
-    local skills = card.special_skills
-    if not skills then return false end
-    for _, skill in ipairs(skills) do
+    for _, skill in ipairs(card.special_skills or Util.DummyTable) do
       local s = Fk.skills[skill]  ---@type ViewAsSkill
-      if s:isInstanceOf(ViewAsSkill) then
-        local new_card = s:viewAs(player, { card.id })
+      if s:isInstanceOf(ViewAsSkill) and s:enabledAtResponse(player) then
+        local new_card = self:getUsingCard()
         if new_card and
           ((new_card.is_passive and not (self.extra_data or Util.DummyTable).not_passive) or player:canUse(new_card, self.extra_data)) then
           return true
@@ -96,14 +97,11 @@ function ReqUseCard:cardFeasible(card)
 end
 
 function ReqUseCard:feasible()
-  local skill = Fk.skills[self.skill_name]---@type ViewAsSkill
-  local card = self.selected_card
-  if skill then
-    card = skill:viewAs(self.player, self.pendings)
-    if card == nil then
-      local selected = table.map(self.selected_targets, Util.Id2PlayerMapper)
-      return skill:feasible(self.player, selected, self.pendings)
-    end
+  local skill = Fk.skills[self.skill_name]---@cast skill ViewAsSkill
+  local card = self:getUsingCard()
+  if skill and card == nil and not self.sub_selection_flag then
+    local selected = table.map(self.selected_targets, Util.Id2PlayerMapper)
+    return skill:feasible(self.player, selected, self.pendings)
   end
   local ret = false
   if card and self:cardFeasible(card) then

@@ -125,7 +125,10 @@ GraphicsBox {
           Layout.fillWidth: true
           text: Ltk.processPrompt(modelData)
           enabled: true
-          onClicked: root.dataModel.toggleChoose(modelData);
+          onClicked: {
+            root.dataModel.result.cards = [];
+            root.dataModel.toggleChoose(modelData);
+          }
         }
       }
     }

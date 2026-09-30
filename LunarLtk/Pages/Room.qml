@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtMultimedia
+import Qt5Compat.GraphicalEffects
 
 import Fk
 import Fk.Components.Common
@@ -19,6 +20,9 @@ RoomBase {
   property alias okCancel: okCancel
   property alias okButton: okButton
   property alias cancelButton: cancelButton
+
+  property alias menuButton: menuButton
+  signal menuButtonClicked()
 
   // required property 填写区
   roomArea: roomArea
@@ -60,9 +64,10 @@ RoomBase {
         }
 
         Component.onCompleted: {
-          if (dataModel.index === 0) {
-            enableChangeSkin = true;
-          }
+          // if (dataModel.playerid === roomScene.dataModel.dashboardId) {
+          //   enableChangeSkin = true;
+          // }
+          enableChangeSkin = false; // 经典ui关闭
         }
       }
     }
@@ -342,14 +347,24 @@ RoomBase {
       anchors.rightMargin: 20
     }
 
+    component OKCancelButton: MetroButton {
+      width: 136
+      height: 56
+      padding: 8
+      textFont.bold: true
+      textFont.family: Config.libianName
+      textFont.pixelSize: 20
+      title.style: Text.Outline
+    }
+
     Row {
       id: okCancel
       anchors.bottom: parent.bottom
       anchors.horizontalCenter: progress.horizontalCenter
       spacing: 20
-      visible: dataModel.okCancelVisible
+      visible: dataModel.okCancelVisible && !roomScene.dataModel.optionVisible
 
-      Button {
+      OKCancelButton {
         id: skipNullificationButton
         text: Lua.tr("SkipNullification")
         visible: dataModel.canSkipNullification
@@ -358,24 +373,44 @@ RoomBase {
         }
       }
 
-      Button {
+      OKCancelButton {
         id: okButton
+        textColor: "#f7dbcb"
+        title.styleColor: "#975a36"
+        backgroundColor: "#C26028"
         enabled: dataModel.okEnabled
         text: Lua.tr("OK")
         onClicked: Lua.updateRequestUI("Button", "OK");
       }
 
-      Button {
+      OKCancelButton {
         id: cancelButton
+        textColor: "#f4dbc1"
+        title.styleColor: "#746c60"
+        backgroundColor: "#ae7842"
         enabled: dataModel.cancelEnabled
         text: Lua.tr("Cancel")
         onClicked: Lua.updateRequestUI("Button", "Cancel");
       }
     }
 
-    Button {
+    OptionArea {
+      id: optionArea
+      anchors.bottom: parent.bottom
+      anchors.bottomMargin: 7
+      anchors.horizontalCenter: progress.horizontalCenter
+      spacing: 20
+      visible: roomScene.dataModel.optionVisible
+      
+      dataModel: roomScene.dataModel.options
+    }
+
+    OKCancelButton {
       id: endPhaseButton
       text: Lua.tr("End")
+      textColor: "#d0eff0"
+      title.styleColor: "#426b6d"
+      backgroundColor: "#42b1b5"
       anchors.bottom: parent.bottom
       anchors.bottomMargin: 40
       anchors.right: parent.right
@@ -442,10 +477,28 @@ RoomBase {
   MiscStatus {
     anchors.right: parent.right
     anchors.top: parent.top
-    anchors.rightMargin: 108
+    anchors.rightMargin: 68
     anchors.topMargin: 8
 
     dataModel: roomScene.dataModel
+  }
+
+  OKCancelButton {
+    id: menuButton
+    width: 64
+    height: 64
+    anchors.top: parent.top
+    anchors.topMargin: 4
+    anchors.right: parent.right
+    anchors.rightMargin: 4 
+    icon.sourceSize: Qt.size(32, 32)
+    icon.source: Cpp.path + "/image/symbolic/actions/open-menu-symbolic.svg"
+    icon.layer.enabled: true
+    icon.layer.effect: ColorOverlay {
+      color: menuButton.textColor
+    }
+    // text: Lua.tr("Menu")
+    onClicked: roomScene.menuButtonClicked();
   }
 
   PhotoElement.MarkArea {

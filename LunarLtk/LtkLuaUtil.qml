@@ -80,6 +80,10 @@ QtObject {
     return _L.getSameGenerals(name);
   }
 
+  function canMatchInHegemony(general, deputy, enabled_kingdoms) {
+    return _L.canMatchInHegemony(general, deputy, enabled_kingdoms)
+  }
+
   function isCompanionWith(general, general2) {
     return _L.isCompanionWith(general, general2);
   }
@@ -144,6 +148,14 @@ QtObject {
     return _L.getCardName(id, filterCard);
   }
 
+  function getEnableKingdoms(general) {
+    return _L.getEnableKingdoms(general)
+  }
+
+  function getKingdomInHegemony(general, deputy, enabled_kingdoms) {
+    return _L.getKingdomInHegemony(general, deputy, enabled_kingdoms)
+  }
+
   function getSkillData(skill_name) {
     return _L.getSkillData(skill_name);
   }
@@ -154,6 +166,14 @@ QtObject {
 
   function getVirtualEquipData(playerid, cid) {
     return _L.getVirtualEquipData(playerid, cid);
+  }
+
+  function getSkinNamesByGeneral(general) {
+    return _L.getSkinNamesByGeneral(general);
+  }
+
+  function getSkinByName(general, name) {
+    return _L.getSkinByName(general, name);
   }
 
   function findMosts() {
@@ -248,8 +268,21 @@ QtObject {
         ret = ret + "/" + Lua.tr(deputy);
       }
     }
+    const hasSameName = Lua.fn(`function(player)
+      local ret = false
+      for _, p2 in ipairs(Fk:currentRoom().players) do
+        if p2 ~= player and p2.general == player.general and p2.deputyGeneral == player.deputyGeneral then
+          ret = true
+          break
+        end
+      end
+      return ret
+    end`)(player);
+    if (hasSameName) {
+      ret = ret + ("[") + player.seat + ("]");
+    }
     if (playerid == Cpp.self.id) {
-      ret = ret + Lua.tr("playerstr_self")
+      ret = ret + Lua.tr("playerstr_self");
     }
     return ret;
   }
@@ -456,5 +489,11 @@ QtObject {
       enabled: additionalProp?.enabled === true,
     };
     return component.createObject(null, prop);
+  }
+
+  function getFullSkinPath(genral, name) {
+    let skin = getSkinByName(genral, name)
+    if (!skin) return SkinBank.getGeneralPicture(genral);
+    return Cpp.path + "/" + skin.path + skin.name
   }
 }

@@ -38,6 +38,11 @@ local settings = {
       _settingsKey = "enableDeputy",
       title = "Enable deputy general",
     },
+
+    W.SwitchRow {
+      _settingsKey = "disableSameConvert",
+      title = "Disable same convert",
+    }
   },
 
   W.PreferenceGroup {

@@ -7,12 +7,17 @@ import Fk.Widgets as W
 Image {
   property string value: "unknown"
   property var options: ["unknown", "loyalist", "rebel", "renegade"]
+  property bool shown: value !== "unknown"
 
   id: root
-  source: visible ? SkinBank.getRolePic(value) : ""
+  source: visible ? (shown ? SkinBank.getRolePic(value) : SkinBank.getRolePic("unknown")) : ""
   visible: value != "hidden"
   width: 32
   height: 35
+
+  W.TapHandler {
+    onTapped: shown = !shown; // 身份可见（property）的可手动切换可见与不可见（ui显示）
+  }
 
   Image {
     property string value: "unknown"

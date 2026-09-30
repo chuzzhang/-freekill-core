@@ -18,7 +18,7 @@ Item {
   property var generalModel
 
   required property ChooseGeneralModel dataModel
-  property string oldName
+  property int index
 
   signal finish()
 
@@ -143,7 +143,7 @@ Item {
           dataModel: Ltk.createGeneralCardModel(modelData)
           onClicked: {
             stack.pop();
-            root.dataModel.changeGeneral(root.oldName, dataModel);
+            root.dataModel.changeGeneral(root.index, dataModel);
             root.finish();
           }
         }

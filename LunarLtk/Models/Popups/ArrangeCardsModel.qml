@@ -106,4 +106,8 @@ QtObject {
 
     resultChanged();
   }
+
+  function initialize() {
+    this.initializeCards();
+  }
 }

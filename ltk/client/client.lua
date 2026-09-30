@@ -12,7 +12,7 @@ Client = AbstractRoom:subclass('Client')
 ---@field public getPlayerById fun(self: AbstractRoom, id: integer): ClientPlayer
 ---@field public getPlayerBySeat fun(self: AbstractRoom, seat: integer): ClientPlayer
 ---@field public setCurrent fun(self: AbstractRoom, p: ClientPlayer)
----@field public getCurrent fun(self: AbstractRoom): ClientPlayer
+---@field public getCurrent fun(self: AbstractRoom): ClientPlayer?
 
 -- load client classes
 ClientPlayer = require "ltk.client.clientplayer"
@@ -383,8 +383,13 @@ local function sendMoveCardLog(move, visible_data)
   local logCards = move.ids
   -- 因为是先addVirtualEquip再发战报 所以只能从move.to拿
   if move.to and (move.toArea == Card.PlayerEquip or move.toArea == Card.PlayerJudge) then
-    local vcard = client:getPlayerById(move.to):getVirtualEquip(move.ids[1])
-    logCards = vcard and { vcard } or logCards
+    local virtualEquips = {}
+    local clientTarget = client:getPlayerById(move.to)
+    for _, cid in pairs(move.ids) do
+      local vcard = clientTarget:getVirtualEquip(cid)
+      table.insert(virtualEquips, vcard or cid)
+    end
+    logCards = virtualEquips
   end
 
   local skillName = Fk:translate(move.skillName) or ""
@@ -443,39 +448,43 @@ local function sendMoveCardLog(move, visible_data)
       }, visible_data)
     end
   elseif move.toArea == Card.PlayerEquip then
-    if move.from ~= move.to and move.fromArea == Card.PlayerEquip then
-      client:appendLog({
-        type = "$LightningMove",
-        from = move.from,
-        to = { move.to },
-        arg2 = skillName,
-        card = logCards,
-      }, visible_data)
-    else
-      client:appendLog({
-        type = "$InstallEquip",
-        from = move.to,
-        arg2 = skillName,
-        card = logCards,
-      }, visible_data)
+    for _, card in ipairs(logCards) do
+      if move.from ~= move.to and move.fromArea == Card.PlayerEquip then
+        client:appendLog({
+          type = "$LightningMove",
+          from = move.from,
+          to = { move.to },
+          arg2 = skillName,
+          card = { card },
+        }, visible_data)
+      else
+        client:appendLog({
+          type = "$InstallEquip",
+          from = move.to,
+          arg2 = skillName,
+          card = { card },
+        }, visible_data)
+      end
     end
   elseif move.toArea == Card.PlayerJudge then
-    if move.from ~= move.to and move.fromArea == Card.PlayerJudge then
-      client:appendLog({
-        type = "$LightningMove",
-        from = move.from,
-        to = { move.to },
-        arg2 = skillName,
-        card = logCards,
-      }, visible_data)
-    elseif move.from then
-      client:appendLog({
-        type = "$PasteCard",
-        from = move.from,
-        to = { move.to },
-        arg2 = skillName,
-        card = logCards,
-      }, visible_data)
+    for _, card in ipairs(logCards) do
+      if move.from ~= move.to and move.fromArea == Card.PlayerJudge then
+        client:appendLog({
+          type = "$LightningMove",
+          from = move.from,
+          to = { move.to },
+          arg2 = skillName,
+          card = { card },
+        }, visible_data)
+      elseif move.from then
+        client:appendLog({
+          type = "$PasteCard",
+          from = move.from,
+          to = { move.to },
+          arg2 = skillName,
+          card = { card },
+        }, visible_data)
+      end
     end
   elseif move.toArea == Card.PlayerSpecial then
     client:appendLog({
@@ -999,6 +1008,11 @@ function Client:showVirtualCard(data)
 end
 
 function Client:changeSkin(data)
+  local playerId = tonumber(data[1]) or 0
+  if playerId == 0 then return end
+  local player = self:getPlayerById(playerId)
+  if not player then return end
+  player.skins = self:getPlayerSkinsData(playerId, data)
   self:notifyUI("ChangeSkin", data)
 end
 

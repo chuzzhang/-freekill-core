@@ -41,7 +41,9 @@ ColumnLayout {
           const id = dataModel.playerid;
           if (id === 0 || id === undefined) return "";
 
-          let ret = root.dataModel.screenName;
+          let ret = Config.hideScreenName ?
+            (root.dataModel.seatNumber ? Lua.tr("seat#" + root.dataModel.seatNumber.toString()) : Lua.tr("Player"))
+            : root.dataModel.screenName; // 如果有座位号，显示几号位
 
           const gamedata = Lua.getPlayerGameData(id);
           const totalTime = gamedata[3];

@@ -233,6 +233,16 @@ Item {
         root.isFavor = fav.includes(g);
       }
     }
+
+    Win.Button {
+      Layout.preferredWidth: 130
+      text: Lua.tr("Check Skins")
+      visible: Ltk.getSkinNamesByGeneral(root.general).length > 0
+
+      onClicked: {
+        detailSwipeView.drawer.currentIndex = 5
+      }
+    }
   }
 
   // TODO: 下面都是小页面的Component，UI重构合并后再拆分到单独qml文件
@@ -679,6 +689,152 @@ Item {
         width: parent.width - 4
         x: 2
         spacing: 0
+        property string generalSourceCode
+
+        Win.Button {
+          Layout.fillWidth: true
+          text: {
+            const skill = root.general;
+            const skillTr = "武将定义";
+            if (generalSrcArea.text === "") {
+              return skillTr + " (点击查看源码)";
+            } else {
+              return skillTr + " (点击折叠)";
+            }
+          }
+
+          onClicked: {
+            if (generalSrcArea.text !== "") {
+              generalSrcArea.text = "";
+            } else {
+              if (!parent.generalSourceCode) parent.updateGeneralSourceCode();
+              generalSrcArea.text = parent.generalSourceCode;
+            }
+          }
+        }
+
+        TextEdit {
+          id: generalSrcArea
+          font.pixelSize: 12
+          Layout.fillWidth: true
+          font.family: "Consolas"
+          readOnly: true
+          wrapMode: Text.WrapAnywhere
+          selectByKeyboard: true
+          selectByMouse: false
+          textFormat: Text.PlainText
+
+          Component.onCompleted: {
+            // 就目前而言只有使用Kde桌面的Linux用户才能体验到语法高亮功能！
+            // 不过那个语法高亮库只依赖Qt库，理论上可以编译到游戏中，但是应该会很麻烦
+            const component = Qt.createComponent("org.kde.syntaxhighlighting", "SyntaxHighlighter");
+            if (component.status !== Component.Ready) {
+              console.warn("SyntaxHighlighter is not installed, syntax highlight feature disabled.");
+              return;
+            }
+
+            const highlighter = component.createObject(generalSrcArea, {
+              textEdit: generalSrcArea,
+              definition: "Lua",
+            });
+          }
+        }
+
+        function updateGeneralSourceCode() {
+          const general = root.general;
+          let ret = "--------------------------------------------\n" +
+          `--- 武将名：${Lua.tr(general)}\n` +
+          "--- 源码：";
+
+          const dat = Ltk.getGeneralData(general);
+          let path = `/packages/${dat.extension}/pkg/${dat.package}/init.lua`;
+          const whole_path = `${Cpp.path}` + path;
+
+          if (!Fs.exists(whole_path)) {
+            ret += "(不可用)\n" + "--------------------------------------------\n\n";
+            generalSourceCode = ret;
+            return;
+          }
+          path = "." + path;
+          const readFile = Lua.fn(`function(path)
+            local f = io.open(path)
+            if not f then return "" end
+            local ret = f:read("a")
+            f:close()
+            return ret
+          end`);
+          const fileContent = readFile(path) || "";
+
+          function extractGeneralSnippet(content, name) {
+            if (!content) return { snippet: content, startLine: -1, endLine: -1 };
+            const lines = content.split(/\r?\n/);
+            // find start line: General( or General:new(
+            let startLine = -1;
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              const m = line.match(/General(?::new)?\s*\(/);
+              if (!m) continue;
+              // gather text from this '(' to its matching ')'
+              let parenCount = 0;
+              let foundClose = false;
+              let j = i;
+              let seg = "";
+              for (; j < lines.length; j++) {
+                const fragment = (j === i) ? lines[j].slice(lines[j].indexOf('(')) : lines[j];
+                seg += (j === i ? lines[j].slice(lines[j].indexOf('(')) : '\n' + lines[j]);
+                for (let k = 0; k < fragment.length; k++) {
+                  const ch = fragment[k];
+                  if (ch === '(') parenCount++;
+                  else if (ch === ')') {
+                    parenCount--;
+                    if (parenCount === 0) { foundClose = true; break; }
+                  }
+                }
+                if (foundClose) break;
+              }
+              const argsSegment = seg;
+              // check second argument contains root.general
+              const escName = name.replace(/[\\^$*+?.()|[\]{}]/g, '\\$&');
+              const reSecond = new RegExp(`,\\s*(root\\.general|["']${escName}["'])`);
+              if (reSecond.test(argsSegment)) {
+                startLine = i;
+                break;
+              }
+            }
+
+            if (startLine === -1) return { snippet: content, startLine: -1, endLine: -1 };
+
+            // compute char index for startLine
+            let charIdx = 0;
+            for (let t = 0; t < startLine; t++) {
+              charIdx += lines[t].length + 1; // +1 for newline
+            }
+
+            // find next General definition after startLine or a top-level return, and cut before it
+            let nextStartLine = -1;
+            const startRegex = /General(?::new)?\s*\(/;
+            const returnRegex = /^\s*return\b/;
+            for (let i2 = startLine + 1; i2 < lines.length; i2++) {
+              if (startRegex.test(lines[i2]) || returnRegex.test(lines[i2])) {
+                nextStartLine = i2;
+                break;
+              }
+            }
+            if (nextStartLine === -1) {
+              // no next general or return, return rest of file from start
+              return { snippet: content.slice(charIdx), startLine: startLine + 1, endLine: lines.length };
+            }
+            let charIdxEnd = 0;
+            for (let t = 0; t < nextStartLine; t++) {
+              charIdxEnd += lines[t].length + 1;
+            }
+            return { snippet: content.slice(charIdx, charIdxEnd), startLine: startLine + 1, endLine: nextStartLine };
+          }
+
+          const snippetObj = extractGeneralSnippet(fileContent, general);
+          const lineInfo = snippetObj.startLine > 0 ? `:${snippetObj.startLine}-${snippetObj.endLine}\n` : "";
+          generalSourceCode = ret + `${path}` + lineInfo + `\n` + "--------------------------------------------\n\n" + snippetObj.snippet + "\n";
+        }
 
         Repeater {
           model: root.general ? Lua.evaluate(`Fk.generals["${root.general}"]:getSkillNameList(true, true)`) : []
@@ -770,6 +926,18 @@ Item {
           }
         }
       }
+      function update() {
+        generalSrcArea.text = "";
+        srcList.generalSourceCode = "";
+      }
+    }
+  }
+
+  Component {
+    id: chechSkinsComponent
+    GeneralSkinOverview {
+      id: generalSkinOverview
+      general: root.general
     }
   }
 
@@ -787,6 +955,8 @@ Item {
       interactive: false
       currentIndex: drawerBar.currentIndex
       clip: true
+
+      property alias drawer: drawerBar
 
       // 出于性能考虑，改为Loader延迟加载
       Loader {
@@ -812,6 +982,11 @@ Item {
       Loader {
         active: SwipeView.isCurrentItem
         sourceComponent: sourceCodeComponent
+      }
+
+      Loader {
+        active: SwipeView.isCurrentItem
+        sourceComponent: chechSkinsComponent
       }
     }
 

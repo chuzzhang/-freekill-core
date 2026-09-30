@@ -31,7 +31,7 @@ Item {
       W.EntryRow {
         id: roomName
         title: Lua.tr("Room Name")
-        text: Lua.tr("$RoomName").arg(Self.screenName)
+        text: Lua.tr("$RoomName").arg(Config.hideScreenName ? Lua.tr("Player") : Self.screenName)
       }
     }
 

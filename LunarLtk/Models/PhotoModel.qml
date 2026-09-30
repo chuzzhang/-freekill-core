@@ -49,6 +49,9 @@ QtObject {
   // 其他UI元素
   property var targetTip: []  // “可烈弓”之类的目标提示文本，已翻译好
   property list<var> limitSkills: []  // 限定技区域，var的内容为 { skill, time }
+  property var skins: ({})
+  property var skin: ({})
+  property var deputySkin: ({})
 
   // 此人的所有标记，不分图和无图，毕竟这里是数据model环节
   // var的结构为如此的object：
@@ -75,6 +78,18 @@ QtObject {
       photoItem.selected = selected;
     } else {
       Lua.updateRequestUI("Photo", playerid, "click", { selected, autoTarget: Config.autoTarget } );
+    }
+  }
+
+  onSkinsChanged: {
+    if (!skins) return;
+    skin = {
+      name: skins.main?.name ?? "",
+      path: skins.main?.path ?? ""
+    };
+    deputySkin = {
+      name: skins.deputy?.name ?? "",
+      path: skins.deputy?.path ?? ""
     }
   }
 

@@ -354,11 +354,12 @@ function CardSkill:preEffect(room, cardEffectData)
           end
         end
         if not table.contains(players, p) then
+          local exp = Exppattern:Parse("nullification")
           for _, s in ipairs(table.connect(p:getAllSkills(), rawget(p, "_fake_skills"))) do
             ---@cast s ViewAsSkill
             if
               s.pattern and
-              Exppattern:Parse("nullification"):matchExp(s.pattern) and
+              exp:matchExp(s.pattern) and
               s:enabledAtNullification(p, cardEffectData)
             then
               table.insert(players, p)

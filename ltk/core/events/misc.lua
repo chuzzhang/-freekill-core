@@ -114,6 +114,7 @@ fk.BeforeTriggerSkillUse = TriggerEvent:subclass("fk.BeforeTriggerSkillUse")
 
 ---@class CardShownData
 ---@field cardIds integer[]
+---@field from ServerPlayer
 
 ---@class fk.CardShown: TriggerEvent
 ---@field data CardShownData

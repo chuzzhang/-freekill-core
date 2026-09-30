@@ -38,6 +38,7 @@ local KnownCardTracker = require "ltk.core.known_card_tracker"
 ---@field public buddy_list integer[] @ 队友列表，或者说自己可以观看别人手牌的那些玩家的列表
 ---@field public equipSlots string[] @ 装备栏列表
 ---@field public sealedSlots string[] @ 被废除的装备栏列表
+---@field public skins table<string, SkinContent?> @ 启用的皮肤，未启用则为空，主将为"main"，副将为"deputy"
 local Player = basePlayer:subclass("Player")
 
 ---@class Player
@@ -81,7 +82,7 @@ function Player:initialize()
   table.insertTable(self.property_keys, {
     "general", "deputyGeneral", "maxHp", "hp", "shield", "gender", "kingdom",
     "dead", "role_shown", "rest", "phase", "faceup", "chained",
-    "equipSlots", "sealedSlots",
+    "equipSlots", "sealedSlots", "skins",
 
     "surrendered",
   })
@@ -127,6 +128,7 @@ function Player:initialize()
   self.skillUsedHistory = {}
   self.skillBranchUsedHistory = {}
   self.buddy_list = {}
+  self.skins = {}
 end
 
 function Player:__tostring()
@@ -1840,6 +1842,18 @@ function Player:canAttachSkill(skill, relate_to_place)
     return false
   end
   return true
+end
+
+--- 最大护甲值
+---@return integer
+function Player:getMaxShield()
+  return math.max(0, 5 + self:getMark(MarkEnum.MaxShieldChanged))
+end
+
+---设置当前皮肤
+---@param skins table
+function Player:setSkin(skins)
+  self.skins = skins or {}
 end
 
 function Player:serialize()

@@ -26,6 +26,8 @@ Item {
       anchors.fill: parent
       fillMode: Image.PreserveAspectCrop
       source: root.source
+      smooth: true
+
     }
   }
 

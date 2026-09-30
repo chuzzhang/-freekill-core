@@ -21,6 +21,7 @@ W.PageBase {
   property var popupItem // 弹窗
   property alias dataModel: dataModel
   property alias bigAnim: bigAnim
+  property alias bgm: bgm
 
   property alias photoModel: photoModel
 
@@ -38,6 +39,12 @@ W.PageBase {
 
   ListModel {
     id: photoModel
+
+    signal modelDataChanged()
+
+    onDataChanged: modelDataChanged()
+    onRowsInserted: modelDataChanged()
+    onRowsRemoved: modelDataChanged()
   }
 
   RoomModel {
@@ -45,56 +52,16 @@ W.PageBase {
     roomPage: roomScene
 
     onSeatChanged: roomScene.arrangePhotos();
-    onPlayerAdded: model => roomScene.photoModel.append({ modelData: model });
+    onPlayerAdded: model => {
+      roomScene.photoModel.append({ modelData: model });
+    };
     onCardsMoved: (move, data) => roomScene.moveCards(move, data);
 
-    onActivated: {
-      roomScene.progressAnim.from = (dataModel.requestDuration / dataModel.requestTotal) * 100.0;
-      roomScene.progressAnim.duration = dataModel.requestDuration;
-      roomScene.progress.visible = true;
-    }
+    onActivated: roomScene.handleOnActivated()
 
-    onDeActivated: {
-      roomScene.skillInteraction.item?.clear();
-      roomScene.skillInteraction.sourceComponent = undefined;
-      roomScene.progress.visible = false;
+    onDeActivated: roomScene.handleOnDeActivated()
 
-      roomScene.dashboard.disableAllCards();
-
-      if (roomScene.popupItem != null) {
-        roomScene.popupItem.finished();
-      }
-
-      Lua.finishRequestUI();
-      applyChange({});
-    }
-
-    onPopupReady: (command, data, model) => {
-      let component;
-      let prop = { dataModel: model };
-      if (!model) delete prop.dataModel;
-
-      const componentTable = {
-        [Command.AskForArrangeCards]: "ArrangeCardsBox",
-        [Command.AskForChoices]: "ChoicesBox",
-        [Command.AskForGeneral]: "ChooseGeneralBox",
-        [Command.AskForCardChosen]: "PlayerCardBox",
-        [Command.AskForPoxi]: "PoxiBox",
-        [Command.AskForMoveCardInBoard]: "MoveCardInBoardBox",
-        [Command.AskForCardsAndChoice]: "ChooseCardsAndChoiceBox",
-
-        [Command.GameOver]: "GameOverBox",
-      };
-
-      if (command == Command.CustomDialog) {
-        component = Lua.createComponent(data.component);
-        Object.assign(prop, data.component?.prop ?? {});
-      } else {
-        component = Qt.createComponent("LunarLtk.Pages.Popups", componentTable[command]);
-      }
-
-      roomScene.showPopup(component, prop);
-    }
+    onPopupReady: (command, data, model) => roomScene.handleOnPopupReady(command, data, model)
 
     onAgReady: roomScene.showAG();
   }
@@ -183,6 +150,22 @@ W.PageBase {
 
   // ==== function 区 ====
 
+  function initializeRoom() {
+    dataModel.initialize();
+    setupCallbacks();
+
+    for (let i = 0; i < dataModel.playerNum; i++) {
+      photoModel.append({ modelData: dataModel.players[i] });
+    }
+
+    bgm.play();
+
+    Ltk.roomScene = this;
+    Ltk.roomModel = dataModel;
+
+    arrangePhotos();
+  }
+
   function cancelAllFocus() {
     for (const model of dataModel.players) {
       const item = model.photoItem;
@@ -207,6 +190,80 @@ W.PageBase {
       item.progressBar.visible = true;
       item.progressTip = Lua.tr(command)
         + Lua.tr(" thinking...");
+    }
+  }
+
+  function handleOnActivated() {
+    roomScene.progressAnim.from = (dataModel.requestDuration / dataModel.requestTotal) * 100.0;
+    roomScene.progressAnim.duration = dataModel.requestDuration;
+    roomScene.progress.visible = true;
+  }
+
+  function handleOnDeActivated() {
+    roomScene.skillInteraction.item?.clear();
+    roomScene.skillInteraction.sourceComponent = undefined;
+    roomScene.progress.visible = false;
+
+    roomScene.dashboard.disableAllCards();
+    roomScene.dashboard.clearVisiblePile();
+
+    if (roomScene.popupItem != null) {
+      roomScene.popupItem.finished();
+    }
+
+    if (dataModel.options) {
+      dataModel.options.destroy();
+      dataModel.options = null;
+    }
+    dataModel.optionVisible = false;
+
+    Lua.finishRequestUI();
+    applyChange({});
+  }
+
+  function handleOnPopupReady(command, data, model) {
+    let component;
+    let prop = { dataModel: model };
+    if (!model) delete prop.dataModel;
+
+    const componentTable = {
+      [Command.AskForArrangeCards]: "ArrangeCardsBox",
+      [Command.AskForChoices]: "ChoicesBox",
+      [Command.AskForGeneral]: "ChooseGeneralBox",
+      [Command.AskForCardChosen]: "PlayerCardBox",
+      [Command.AskForPoxi]: "PoxiBox",
+      [Command.AskForMoveCardInBoard]: "MoveCardInBoardBox",
+      [Command.AskForCardsAndChoice]: "ChooseCardsAndChoiceBox",
+
+      [Command.GameOver]: "GameOverBox",
+    };
+
+    let needLoadData = null;
+    if (command == Command.CustomDialog) {
+      component = Lua.createComponent(data.component);
+      if (model) {
+        model?.initialize()
+      } else {
+        Object.assign(prop, data.component?.prop ?? {});
+      }
+    } else if (command == Command.MiniGame) {
+      if (data.model) {
+        component = Lua.createComponent(data.component);
+        // console.log(component.status, component.errorString());
+        Object.assign(prop, data.data?.prop ?? {});
+      } else { // 兼容旧版
+        component = Qt.createComponent(Cpp.path + "/" + data.component.url);
+        needLoadData = data.data;
+      }
+    } else {
+      component = Qt.createComponent("LunarLtk.Pages.Popups", componentTable[command]);
+    }
+
+    roomScene.showPopup(component, prop);
+    if (needLoadData) roomScene.popupItem.loadData(needLoadData); // 兼容旧版
+
+    if (roomScene.popupItem.timeout) {
+      roomScene.progress.visible = false;
     }
   }
 
@@ -263,7 +320,7 @@ W.PageBase {
 
     let photo;
     if (isCardId === true) {
-      const modelFinder = v => v.cardId === id;
+      const modelFinder = v => v.uniqueId === id;
       const m = dataModel.processing.find(modelFinder) || dataModel.discard.find(modelFinder);
       if (m) photo = m.cardItem;
     } else {
@@ -552,6 +609,11 @@ W.PageBase {
       skillInteraction.sourceComponent = undefined;
       if (roomScene.popupItem)
       roomScene.popupItem.finished();
+      if (dataModel.options) {
+        dataModel.options.destroy();
+        dataModel.options = null;
+      }
+      dataModel.optionVisible = false;
     }
     for (const dat of (uiUpdate["_new"] || [])) {
       if (dat.type !== "Interaction") continue;
@@ -582,6 +644,35 @@ W.PageBase {
         });
         skillInteraction.item.dataModel = model;
         skillInteraction.item.clicked();
+        break;
+      case "optionbox":
+        const [options, all_options, single, min_num, max_num, direct] = [data.options, data.all_options, data.single, data.min_num, data.max_num, data.direct_send];
+        const optionComponent = Qt.createComponent("LunarLtk.Models", "OptionsModel");
+        const optionModel = optionComponent.createObject(null, {
+          options,
+          allOptions: all_options,
+          minNum: min_num,
+          maxNum: max_num,
+          cancelable: roomScene.dataModel.cancelEnabled,
+          skillName: skill_name,
+          prompt: "",
+          single: direct || single,
+          enableOK: !direct,
+          acceptable: roomScene.dataModel.okEnabled
+        });
+        optionModel.update.connect(option => {
+          Lua.updateRequestUI("Interaction", "1", "update", optionModel.single ? (optionModel.result[0] ?? "") : optionModel.result)
+          });
+        optionModel.accepted.connect(() => {
+          if (direct) {
+            Lua.updateRequestUI("Interaction", "1", "finish", optionModel.result[0] ?? "");
+          }
+          Lua.updateRequestUI("Button", "OK")
+        });
+        optionModel.rejected.connect(() => Lua.updateRequestUI("Button", "Cancel"));
+        dataModel.options = optionModel;
+
+        dataModel.optionVisible = true;
         break;
       case "spin":
         skillInteraction.sourceComponent =
@@ -617,11 +708,33 @@ W.PageBase {
           }
           skillInteraction.item.model = model;
         }
+        if (data.qml.prop) {
+          Object.assign(skillInteraction.item, data.qml.prop);
+        }
         skillInteraction.item?.clicked();
         break;
       default:
         skillInteraction.sourceComponent = undefined;
         break;
+      }
+    }
+
+    if (uiUpdate["Interaction"]) handleInteractionRefresh(uiUpdate);
+  }
+
+  // interaction真神了，这么多函数伺候它一个
+  function handleInteractionRefresh(uiUpdate) {
+    const dat = uiUpdate["Interaction"][0]
+    const [type, refresh_data] = [dat.spec?.type, dat.refresh_data]
+    if (!type || !refresh_data) return; 
+    // 所有允许refresh_interaction的skillInteraction都要在这里把数据传到interaction里
+
+    switch (type) {
+      case "optionbox":
+      const optionModel = roomScene.dataModel.options
+      if (optionModel) {
+        const orig_options = optionModel.options
+        optionModel.enabledOptions = refresh_data.filter(str => orig_options.indexOf(str) !== -1)
       }
     }
   }
@@ -697,39 +810,21 @@ W.PageBase {
   }
 
   // TODO: 处理minigame，但现在懒得管
-  function handleMiniGame(sender, data) {
+  /* function handleMiniGame(sender, data) {
     const game = data.type;
     const dat = data.data;
     const gdata = Ltk.getMiniGame(game, Cpp.self.id, JSON.stringify(dat));
     const component = Qt.createComponent(Cpp.path + "/" + gdata.qml_path + ".qml")
+    console.log(component.status, component.errorString());
     dataModel.activate();
     showPopup(component);
     if (dat) {
       roomScene.popupItem.loadData(dat);
     }
-  }
+  } */
 
   function updateMiniGame(sender, data) {
-    popupItem?.updateData(data);
-  }
-
-  function changeSkin(sender, data) {
-    const photo = getPhoto(Number(data[0]));
-    const path = data[2];
-    const deputypath = data[3];
-    if (path) {
-      if (Number(data[0]) === Cpp.self.id) {
-        Config.enabledSkins[photo.general] = path === "-" ? "" : path;
-      }
-      photo.skinSource = path === "-" ? "" : (AppPath + "/" + path);
-    }
-    if (deputypath) {
-      if (Number(data[0]) === Cpp.self.id) {
-        Config.enabledSkins[photo.deputyGeneral] = deputypath === "-" ? "" : deputypath;
-      }
-      photo.deputySkinSource = deputypath === "-" ? "" : (AppPath + "/" + deputypath);
-    }
-    photo.changeSkinTimer.start()
+    roomScene.popupItem?.updateData(data);
   }
 
   function showDistance(show) {
@@ -886,30 +981,16 @@ W.PageBase {
 
     addCallback(Command.CloseAG, () => agItem.close());
 
-    addCallback(Command.MiniGame, handleMiniGame);
     addCallback(Command.UpdateMiniGame, updateMiniGame);
 
     addCallback(Command.UpdateRequestUI, updateRequestUI);
-    addCallback(Command.ChangeSkin, changeSkin);
 
     addCallback(Command.ShowVirtualCard, showVirtualCard);
 
-    addCallback("Ltk.SkillInvoked", (_, data) => popupLogArea.show(data));
+    addCallback("Ltk.SkillInvoked", (_, data) => popupLogArea.show(data, 3000, 2));
   }
 
   Component.onCompleted: {
-    dataModel.initialize();
-    setupCallbacks();
-
-    for (let i = 0; i < dataModel.playerNum; i++) {
-      photoModel.append({ modelData: dataModel.players[i] });
-    }
-
-    bgm.play();
-
-    Ltk.roomScene = this;
-    Ltk.roomModel = dataModel;
-
-    arrangePhotos();
+    initializeRoom()
   }
 }

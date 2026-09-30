@@ -8,6 +8,7 @@ import Fk.Widgets as W
 import Fk.Components.Common
 
 import LunarLtk.Components
+import LunarLtk
 
 pragma ComponentBehavior: Bound
 
@@ -115,29 +116,34 @@ Item {
         SkinItem {
           required property int index
           required property var modelData
+          text: Lua.tr(modelData)
           source: {
             if (index === 0) {
               return SkinBank.getGeneralPicture(root.orig_general)
             } else {
-              return Cpp.path + "/" + modelData
+              const skinData = Ltk.getSkinByName(root.orig_general, modelData)
+              if (skinData) {
+                return Cpp.path + "/" + skinData.url
+              }
+              return SkinBank.getGeneralPicture("unknown")
             }
           }
           y: 25
 
           W.TapHandler {
             onTapped: {
-              if (index === 0) {
+              if (parent.index === 0) {
                 root.selected_skin = "-";
               } else {
-                root.selected_skin = modelData;
+                root.selected_skin = parent.modelData;
               }
               
               for (let i = 0; i < skinsRepeater.count; i++) {
-                if (i !== index) {
+                if (i !== parent.index) {
                   skinsRepeater.itemAt(i).selected = false;
                 }
               };
-              selected = true;
+              parent.selected = true;
             }
           }
         }
@@ -192,28 +198,33 @@ Item {
         SkinItem {
           required property int index
           required property var modelData
+          text: Lua.tr(modelData)
           source: {
             if (index === 0) {
               return SkinBank.getGeneralPicture(root.orig_deputy)
             } else {
-              return Cpp.path + "/" + modelData
+              const skinData = Ltk.getSkinByName(root.orig_deputy, modelData)
+              if (skinData) {
+                return Cpp.path + "/" + skinData.url
+              }
+              return SkinBank.getGeneralPicture("unknown")
             }
           }
           y: 25
 
           W.TapHandler {
             onTapped: {
-              if (index === 0) {
+              if (parent.index === 0) {
                 root.selected_deputy_skin = "-";
               } else {
-                root.selected_deputy_skin = modelData;
+                root.selected_deputy_skin = parent.modelData;
               }
               for (let i = 0; i < deputySkinsRepeater.count; i++) {
-                if (i !== index) {
+                if (i !== parent.index) {
                   deputySkinsRepeater.itemAt(i).selected = false;
                 }
               };
-              selected = true;
+              parent.selected = true;
             }
           }
         }

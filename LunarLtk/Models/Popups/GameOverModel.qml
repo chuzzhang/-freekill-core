@@ -15,7 +15,7 @@ QtObject {
   readonly property bool canContinue:
     !Config.observing && !Config.replaying && Config.roomCapacity === 1
 
-  readonly property bool canBackToRoom: !Config.observing
+  readonly property bool canBackToRoom: true // !Config.observing
   readonly property bool canSaveReplay: Config.observing && !Config.replaying
   readonly property bool canBookmarkReplay: !Config.observing && !Config.replaying
 

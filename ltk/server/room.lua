@@ -20,7 +20,7 @@ local Room = AbstractRoom:subclass("Room")
 ---@field public getPlayerById fun(self: AbstractRoom, id: integer): ServerPlayer
 ---@field public getPlayerBySeat fun(self: AbstractRoom, seat: integer): ServerPlayer
 ---@field public setCurrent fun(self: AbstractRoom, p: ServerPlayer)
----@field public getCurrent fun(self: AbstractRoom): ServerPlayer
+---@field public getCurrent fun(self: AbstractRoom): ServerPlayer?
 ---@field public logic GameLogic
 
 local ServerRoomBase = Fk.Base.ServerRoomBase
@@ -96,20 +96,25 @@ function Room:handleUpdateMini(id, reqlist)
 end
 
 function Room:handleChangeSkin(id, data)
+  local player = self:getPlayerById(id)
+  if not player then return end
+  player.skins = self:getPlayerSkinsData(id, data)
   self:doBroadcastNotify("ChangeSkin", data)
 end
 
--- 构造武将牌堆。同名武将只留下一张
+-- 构造武将牌堆。若没有开启禁止同名替换，同名武将只留下一张
 function Room:makeGeneralPile()
   local trueNames = {}
   local ret = {}
-  if self.game_started then
+  -- true禁止同名替换，即同名武将视为不同武将；false同名武将只留一张
+  local enableSameName = self:getSettings("disableSameConvert")
+  if self.game_started and not enableSameName then
     for _, player in ipairs(self.players) do
       trueNames[Fk.generals[player.general].trueName] = true
     end
   end
   for name, general in pairs(Fk.generals) do
-    if Fk:canUseGeneral(name) and not trueNames[general.trueName] then
+    if Fk:canUseGeneral(name) and (enableSameName or not trueNames[general.trueName]) then
       table.insert(ret, name)
       trueNames[general.trueName] = true
     end
@@ -292,7 +297,7 @@ function Room:getNCards(num, from)
   assert(from == "top" or from == "bottom")
   if #self.draw_pile < num then
     self:shuffleDrawPile()
-    if #self.draw_pile < num then
+    if #self.draw_pile < num and not self:getBanner("SkipNoCardDraw") then
       self:sendLog{
         type = "#NoCardDraw",
         toast = true,
@@ -855,6 +860,7 @@ end
 ---@field include_equip? boolean @ 能不能选装备
 ---@field pattern? string @ 选牌规则
 ---@field expand_pile? string|integer[] @ 可选私人牌堆名称，或额外可选牌
+---@field visible_pile? string|integer[] @ 可见的牌
 
 --- 询问一名玩家选择自己的几张牌。
 ---
@@ -863,7 +869,7 @@ end
 ---@param params AskToCardsParams @ 各种变量
 ---@return integer[] @ 选择的牌的id列表，可能是空的
 function Room:askToCards(player, params)
-  local maxNum, minNum, expand_pile = params.max_num, params.min_num, params.expand_pile
+  local maxNum, minNum, expand_pile, visible_pile = params.max_num, params.min_num, params.expand_pile, params.visible_pile
   if maxNum < 1 then
     return {}
   end
@@ -897,6 +903,7 @@ function Room:askToCards(player, params)
     skillName = params.skill_name,
     pattern = params.pattern,
     expand_pile = params.expand_pile,
+    visible_pile = params.visible_pile,
   }
   local activeParams = { ---@type AskToUseActiveSkillParams
     skill_name = "choose_cards_skill",
@@ -933,7 +940,7 @@ end
 ---@class AskToViewCardsAndChoiceParams: ViewCardsParams
 ---@field choices? string[] @ 可选选项列表，默认值为“确定”
 
---- 询问玩家观看一些牌并做出选项，但是选项有额外的点亮标准
+--- 询问玩家观看一些牌并选择选项
 ---@param player ServerPlayer @ 要询问的玩家
 ---@param params AskToViewCardsAndChoiceParams @ 参数列表
 ---@return string
@@ -1009,6 +1016,7 @@ end
 ---@field equal? boolean @ 是否要求牌数和目标数相等，默认否
 ---@field pattern? string @ 选牌规则，默认为"."
 ---@field expand_pile? string|integer[] @ 可选私人牌堆名称，或额外可选牌
+---@field visible_pile? string|integer[] @ 可见的牌
 ---@field will_throw? boolean @ 选卡牌须能弃置
 ---@field card_tip_name? string @ 引用的选择卡牌提示的函数名
 
@@ -1038,7 +1046,13 @@ function Room:askToChooseCardsAndPlayers(player, params)
   pcards = table.filter(pcards, function(cid)
     return exp:match(Fk:getCardById(cid)) and not (params.will_throw and player:prohibitDiscard(cid))
   end)
-  if #pcards < minCardNum and not params.cancelable then return {}, {}, false end
+  if not params.cancelable then -- 牌不够的情况
+    if #pcards == 0 then
+      return {}, {}, false
+    elseif #pcards < minCardNum then
+      minCardNum = #pcards -- 防止牌不够的情况无法按确定和取消
+    end
+  end
 
   local data = {
     targets = table.map(params.targets, Util.IdMapper),
@@ -1053,6 +1067,7 @@ function Room:askToChooseCardsAndPlayers(player, params)
     targetTipName = params.target_tip_name,
     extra_data = params.extra_data,
     expand_pile = params.expand_pile or (params.extra_data and params.extra_data.expand_pile),
+    visible_pile = params.visible_pile or (params.extra_data and params.extra_data.visible_pile),
     will_throw = params.will_throw,
   }
   local activeParams = { ---@type AskToUseActiveSkillParams
@@ -1079,6 +1094,7 @@ end
 ---@field targets? ServerPlayer[] @ 可分配的目标角色。**默认为所有存活角色**
 ---@field cards? integer[] @ 要分配的卡牌。**默认拥有的所有牌**
 ---@field expand_pile? string|integer[] @ 可选私人牌堆名称，或额外可选牌
+---@field visible_pile? string|integer[] @ 可见的牌
 ---@field single_max? integer|table @ 限制每人能获得的最大牌数。输入整数或(以角色id为键以整数为值)的表
 ---@field cancelable? boolean @ 是否可取消。**默认不可**
 ---@field skip? boolean @ 是否跳过移动。**默认不跳过**
@@ -1097,8 +1113,8 @@ function Room:askToYiji(player, params)
   params.skill_name = params.skill_name or "distribution_select_skill"
   params.min_num = params.min_num or 0
   params.max_num = params.max_num or #cards
-  local skillName, minNum, maxNum, single_max, expand_pile = params.skill_name,
-    params.min_num, params.max_num, params.single_max, params.expand_pile
+  local skillName, minNum, maxNum, single_max, expand_pile, visible_pile = params.skill_name,
+    params.min_num, params.max_num, params.single_max, params.expand_pile, params.visible_pile
 
   local list = {}
   for _, pid in ipairs(targets) do
@@ -1125,6 +1141,7 @@ function Room:askToYiji(player, params)
     targets = targets,
     residued_list = residueMap,
     expand_pile = expand_pile,
+    visible_pile = visible_pile,
     skillName = skillName,
   }
 
@@ -1184,7 +1201,7 @@ end
 ---@class AskToChooseGeneralParams
 ---@field generals string[] @ 可选武将
 ---@field n? integer @ 可选数量，默认为1
----@field no_convert? boolean @ 可否同名替换，默认可
+---@field no_convert? boolean @ 禁止同名替换，默认不禁止
 ---@field rule? string @ 选将规则名（使用```Fk:addChooseGeneralRule```定义），默认为askForGeneralsChosen
 ---@field extra_data? table @ 额外信息，键值表。预留：```skill_name```技能名
 ---@field heg? boolean @ 是否应用国战ui（提示珠联璧合和主副将调整阴阳鱼）。默认选将规则为heg_general_choose
@@ -1201,6 +1218,7 @@ function Room:askToChooseGeneral(player, params)
   if not rule then return {} end
 
   local n, generals = params.n or 1, params.generals
+  local no_convert = params.no_convert or false
   if #generals == n then return n == 1 and generals[1] or generals end
   local extra_data = params.extra_data or {}
   extra_data.n = extra_data.n or n
@@ -1211,7 +1229,7 @@ function Room:askToChooseGeneral(player, params)
   local data = {
     generals,
     n,
-    params.no_convert or false,
+    no_convert,
     params.heg or false,
     rule_type,
     params.prompt or "",
@@ -1222,6 +1240,167 @@ function Room:askToChooseGeneral(player, params)
   local choices = req:getResult(player)
   if #choices == 1 then return choices[1] end
   return choices
+end
+
+---@class AskToChooseIniticalGeneralParams
+---@field targets ServerPlayer | ServerPlayer[]
+---@field generals? string[] @ 提前传入可选的武将牌，该参数会覆盖isLord、num和lordNum，需自行returnToGeneralPile放回武将牌堆
+---@field lordRole? string @ “主公”身份，默认为主公，明忠模式则为忠臣
+---@field isLord? boolean @ 是否为“主公”，决定是否调用lordNum取武将牌
+---@field lordGeneral? string @ 主公主将
+---@field lordDeputy? string @ 主公副将
+---@field needDeputy? boolean @ 是否需要副将
+---@field num? integer @ 默认选武将数
+---@field lordNum? integer @ 主公额外选将
+---@field isHeg? boolean @ 是否为国战
+---@field enabledKingdoms? string[] @ 允许使用的势力（国战专属参数）
+---@field hideRole? boolean @ 是否隐藏身份显示
+---@field skipSetup? boolean @ 跳过设置武将
+
+---初始选将
+---@param player ServerPlayer @ 无用参数
+---@param params AskToChooseIniticalGeneralParams
+---@return table<ServerPlayer, string[]>, table<ServerPlayer, table>, string[] @ 第一个参数是每个玩家选的武将，第二个参数是每个玩家选将拥有的额外信息，比如神将选的势力和一些额外选择，第三个参数是未选武将
+function Room:askToChooseIniticalGeneral(player, params)
+  params.isLord = params.isLord or false
+  params.lordRole = params.lordRole or ""
+  params.lordGeneral = params.lordGeneral or ""
+  params.lordDeputy = params.lordDeputy or ""
+  params.needDeputy = params.needDeputy or false
+  params.num = params.num or 5
+  params.lordNum = params.lordNum or 3
+  params.isHeg = params.isHeg or false
+  params.enabledKingdoms = params.enabledKingdoms or {}
+  params.hideRole = params.hideRole or false
+
+  if params.lordGeneral == "" and params.lordDeputy ~= "" then
+    error("can't assign lordDeputy but left lordGeneral empty")
+  end
+
+  local targets = params.targets
+  if params.targets.id then
+    targets = {params.targets}
+  end
+
+  local double = params.needDeputy and 2 or 1
+  local generalNum = params.isLord and (#targets * (params.num + params.lordNum) * double) or (#targets * params.num * double)
+  local generals = params.generals or self:getNGenerals(generalNum)
+  local req = Request:new(targets, "CustomDialog")
+  for i, pl in ipairs(targets) do
+    local arg
+    if params.generals then
+      local pNum = math.floor(#generals / #targets)
+      arg = table.slice(generals, (i - 1) * pNum + 1, i * pNum + 1)
+    else
+      arg = table.slice(generals, (i - 1) * params.num + 1, i * params.num + 1)
+    end
+
+    -- 国战的话就整理一下武将顺序
+    if params.isHeg then
+      local g_map = {}
+      local default_order = { "wei", "shu", "wu", "qun", "jin", "wild" }
+      for _, g in ipairs(arg) do
+        local gdata = Fk.generals[g]
+        if g_map[gdata.kingdom] then
+          table.insert(g_map[gdata.kingdom], g)
+        else
+          g_map[gdata.kingdom] = {g}
+        end
+      end
+
+      local arr = {}
+      for _, ki in ipairs(default_order) do
+        if g_map[ki] then
+          table.insertTable(arr, g_map[ki])
+        end
+      end
+      for k, v in pairs(g_map) do
+        if not table.contains(default_order, k) then
+          table.insertTable(arr, v)
+        end
+      end
+
+      arg = arr
+
+    end
+
+    local dat = {
+      component = {
+        name = "ChooseInitialGeneralBox",
+        uri = "LunarLtk.Pages.Popups",
+        model = {
+          name = "ChooseInitialGeneralModel",
+          uri = "LunarLtk.Models.Popups",
+          prop = {
+            generals = arg,
+            choiceNum = double,
+            lordGeneral = params.lordGeneral,
+            lordDeputy = params.lordDeputy,
+            selfRole = params.hideRole and "" or pl.role,
+            lordRole = params.lordRole,
+            hegemony = params.isHeg,
+            hideRole = params.hideRole,
+            convertDisabled = self:getSettings("disableSameConvert") or false,
+            enabledKingdoms = params.enabledKingdoms
+          }
+        },
+      },
+    }
+    req.focus_text = "AskForGeneral"
+    req.timeout = self:getSettings('generalTimeout')
+    req:setData(pl, dat)
+    req:setDefaultReply(pl, {table.concat(self:tableRandomPick(arg, double), ","), "kingdom,"})
+    if params.isHeg then
+      for _, g in ipairs(arg) do
+        if table.find(arg, function (g2)
+          if Fk:canMatchInHegemony(g, g2, params.enabledKingdoms) then
+            req:setDefaultReply(pl, {table.concat({g, g2}, ","), "kingdom,"})
+            return true
+          end
+        end) then
+          break
+        end
+      end
+    end
+  end
+
+  local ans, ans2 = {}, {}
+
+  local _generals = table.simpleClone(generals)
+  for _, pl in ipairs(targets) do
+    local result = req:getResult(pl)
+    local g_data = string.split(result[1], ",")
+    local extra_data = string.split(result[2], ",")
+    local ava_kingdoms = Fk:getKingdomsNeedToChoose(g_data[1])
+    if params.isHeg then ava_kingdoms = Fk:getKingdomInHegemony(g_data[1], g_data[2], params.enabledKingdoms) end
+    if extra_data[2] == "" and #ava_kingdoms > 0 then
+      extra_data[2] = self:tableRandomPick(ava_kingdoms, 1)[1]
+    end
+
+    if not params.skipSetup then
+      if #g_data == double then
+        self:prepareGeneral(pl, g_data[1], g_data[2] or "", true)
+      else
+        fk.qCritical("not reasonable reply!")
+        self:gameOver("")
+      end
+
+      if extra_data[1] == "kingdom" and extra_data[2] and extra_data[2] ~= "" then
+        pl.kingdom = extra_data[2]
+        self:notifyProperty(pl, pl, "kingdom")
+      end
+    end
+
+    ans[pl] = g_data
+    ans2[pl] = { [extra_data[1]] = extra_data[2] }
+    for _, g in ipairs(g_data) do
+      table.removeOne(_generals, g)
+    end
+  end
+
+  self:returnToGeneralPile(_generals, "random")
+
+  return ans, ans2, _generals
 end
 
 --- 询问玩家若为神将、双势力需选择一个势力。
@@ -1313,9 +1492,13 @@ end
 ---@class PoxiExtraData
 ---@field visible_data? table<string, boolean> @ 牌id是否可见的映射表
 
+---@class PoxiCardData
+---@field [1] string @ 牌堆名
+---@field [2] integer[] @ 卡牌id表
+
 ---@class AskToPoxiParams
 ---@field poxi_type string @ poxi关键词
----@field data any @ 牌堆信息
+---@field data PoxiCardData[] @ 牌堆信息
 ---@field extra_data? table|PoxiExtraData @ 额外信息
 ---@field cancelable? boolean @ 是否可取消
 
@@ -1331,6 +1514,30 @@ function Room:askToPoxi(player, params)
   params.cancelable = (params.cancelable == nil) and true or params.cancelable
   local poxi = Fk.poxi_methods[params.poxi_type]
   if not poxi then return {} end
+
+  -- 打乱暗牌
+  local visibleData = (params.extra_data or Util.DummyTable).visible_data
+  if visibleData then
+    local cardDatas = params.data
+    for _, card_data in ipairs(cardDatas) do
+      local ids = card_data[2]
+      local unknownIndexs, unknownVals = {}, {}
+      for i, id in ipairs(ids) do
+        if visibleData[tostring(id)] == false then
+          table.insert(unknownIndexs, i)
+          table.insert(unknownVals, id)
+        end
+      end
+      if #unknownIndexs > 1 then
+        local newIds = table.simpleClone(ids)
+        self:shuffleTable(unknownVals)
+        for j, idx in ipairs(unknownIndexs) do
+          newIds[idx] = unknownVals[j]
+        end
+        card_data[2] = newIds
+      end
+    end
+  end
 
   local command = "AskForPoxi"
   local req = Request:new(player, command)
@@ -1493,6 +1700,7 @@ function Room:askToChoices(player, params)
   params.prompt = params.prompt or ""
   params.all_choices = params.all_choices or params.choices
   params.detailed = params.detailed or false
+  params.single = params.single or false
 
   local req = Request:new(player, command)
 
@@ -1517,7 +1725,8 @@ function Room:askToChoices(player, params)
     params.choices, params.all_choices, {minNum, maxNum}, params.cancelable, params.skill_name, params.prompt, params.detailed, params.single,
   })
   local result = req:getResult(player)
-  if result == "" then
+  if type(result) ~= "table" or #result > maxNum or (#result < minNum and not params.cancelable)
+  or table.find(result, function (r) return not table.contains(params.choices, r) end) then
     if params.cancelable then
       return {}
     else
@@ -1530,11 +1739,12 @@ end
 ---@class askToJointChoiceParams
 ---@field players ServerPlayer[] @ 被询问的玩家
 ---@field choices string[] | string[][] @ 可选选项列表。若玩家可选项不同，填写二维数组
+---@field all_choices? string[] | string[][] @ 全部选项列表
 ---@field skill_name? string @ 技能名
 ---@field prompt? string @ 提示信息
 ---@field send_log? boolean @ 是否发Log，默认否
 
---- 同时询问多名玩家从众多选项中选择一个（要求所有玩家选项相同，不同的请自行构造request）
+--- 同时询问多名玩家从众多选项中选择一个（选项可不同）
 ---@param player ServerPlayer @ 发起者
 ---@param params askToJointChoiceParams @ 各种变量
 ---@return table<ServerPlayer, string> @ 返回键值表，键为Player、值为选项
@@ -1548,7 +1758,19 @@ function Room:askToJointChoice(player, params)
   if type(choices[1]) == "table" then
     assert(#choices == #players)
   else
-    choicesMap = table.map(players, function() return choices end)
+    choicesMap = table.map(players, function() return choices end) ---@type string[][]
+  end
+
+  local all_choices = params.all_choices
+  local allChoicesMap ---@type string[][]
+  if all_choices then
+    if type(all_choices[1]) == "table" then
+      allChoicesMap = all_choices ---@type string[][]
+    else
+      allChoicesMap = table.map(players, function() return all_choices end) ---@type string[][]
+    end
+  else
+    allChoicesMap = choicesMap
   end
 
   local req = Request:new(players, "AskForChoices")
@@ -1556,9 +1778,10 @@ function Room:askToJointChoice(player, params)
   req.receive_decode = false
   for i, p in ipairs(players) do
     local p_choices = choicesMap[i]
+    local p_all_choices = allChoicesMap[i]
     local data = {
       p_choices,
-      p_choices,
+      p_all_choices,
       { 1, 1 },
       false,
       skillName,
@@ -1597,6 +1820,7 @@ end
 ---@field pattern? string @ 选牌规则
 ---@field prompt? string @ 提示信息
 ---@field expand_pile? string @ 可选私人牌堆名称
+---@field visible_pile? string|integer[] @ 可见的牌
 ---@field will_throw? boolean @ 是否是弃牌，默认否（在这个流程中牌不会被弃掉，仅用作禁止弃置技判断）
 
 --- 同时询问多名玩家选择一些牌（要求所有玩家选牌规则相同，不同的请自行构造request）
@@ -1610,6 +1834,7 @@ function Room:askToJointCards(player, params)
   local players, maxNum, minNum = params.players, params.max_num, params.min_num
   local include_equip = params.include_equip or false
   local expand_pile = params.expand_pile or nil
+  local visible_pile = params.visible_pile or nil
   local will_throw = params.will_throw or false
   local prompt = params.prompt or ("#AskForCard:::" .. maxNum .. ":" .. minNum)
 
@@ -1660,6 +1885,7 @@ function Room:askToJointCards(player, params)
       skillName = skill_name,
       pattern = pattern,
       expand_pile = expand_pile,
+      visible_pile = visible_pile,
     },
   }
 
@@ -1683,7 +1909,170 @@ function Room:askToJointCards(player, params)
   return ret
 end
 
+---@class AskToOptionParams
+---@field skill_name? string
+---@field prompt? string
+---@field options string[]
+---@field all_options? string[]
+---@field cancelable? boolean
 
+--- 选择一个选项
+---@param player ServerPlayer
+---@param params AskToOptionParams
+---@return string
+function Room:askToOption(player, params)
+  if #params.options == 1 and not params.all_options then return params.options[1] end
+
+  local dupParams = table.simpleClone(params) --[[@as AskToOptionsParams]]
+  dupParams.min_num = 1
+  dupParams.max_num = 1
+  dupParams.single = true
+  local result = self:askToOptions(player, dupParams)[1]
+
+  if result == nil then result = "" end
+  if result == "" then
+    if table.contains(params.options, "Cancel") then
+      result = "Cancel"
+    else
+      result = params.options[1]
+    end
+  end
+  return result
+end
+
+---@class AskToOptionsParams: AskToOptionParams
+---@field min_num integer
+---@field max_num integer
+---@field single? boolean
+
+--- 让一些玩家同时选择一个option
+---@param player ServerPlayer
+---@param params AskToOptionsParams
+---@return string[]
+function Room:askToOptions(player, params)
+  local minNum, maxNum = params.min_num, params.max_num
+  if #params.options <= minNum and not params.all_options and not params.cancelable then return params.options end
+  assert(minNum <= maxNum)
+  assert(not params.all_options or table.every(params.options, function(c) return table.contains(params.all_options, c) end))
+
+  params.skill_name = params.skill_name or ""
+  params.all_options = params.all_options or params.options
+  params.prompt = params.prompt or ""
+  params.single = params.single and params.single
+  if params.cancelable == nil then
+    params.cancelable = true
+  end
+
+  local command = "AskForOptions"
+  local req = Request:new(player, command)
+
+  local hide = false -- 是否隐藏读条，用于国战同时机技能选择
+  if params.skill_name == "trigger" then
+    for _, s in ipairs(params.options) do
+      local skill_name = s
+      if skill_name:startsWith("#skill_muti_trigger") then
+        local strSplited = skill_name:split(":")
+        skill_name = strSplited[#strSplited - 1]
+      end
+      if player:isFakeSkill(skill_name) then
+        hide = true
+        break
+      end
+    end
+  end
+  req.focus_text = hide and "" or params.skill_name
+
+  req:setData(player, {
+    params.options, params.all_options, {minNum, maxNum}, params.cancelable, params.skill_name, params.prompt, params.single,
+  })
+
+  local result = req:getResult(player)
+  if type(result) ~= "table" or #result > maxNum or (#result < minNum and not params.cancelable)
+  or (table.find(result, function (r)
+      return not table.contains(params.options, r) and not (params.cancelable and r == "Cancel")
+    end)) then
+    if params.cancelable then
+      return {}
+    else
+      return self:tableRandomPick(params.options, math.min(minNum, #params.all_options))
+    end
+  end
+
+  return result
+end
+
+---@class askToJointOptionParams
+---@field players ServerPlayer[] @ 被询问的玩家
+---@field options string[] | string[][] @ 可选选项列表。若玩家可选项不同，填写二维数组
+---@field all_options? string[] | string[][] @ 全部选项列表
+---@field skill_name? string @ 技能名
+---@field prompt? string @ 提示信息
+---@field send_log? boolean @ 是否发Log，默认否
+
+--- 同时询问多名玩家从众多选项中选择一个（选项可不同）
+---@param player ServerPlayer @ 发起者
+---@param params askToJointOptionParams @ 各种变量
+---@return table<ServerPlayer, string> @ 返回键值表，键为Player、值为选项
+function Room:askToJointOption(player, params)
+  local skillName = params.skill_name or "AskForChoice"
+  local prompt = params.prompt or "AskForChoice"
+  local players, options = params.players, params.options
+  local sendLog = params.send_log or false
+
+  local choicesMap = options ---@type string[][]
+  if type(options[1]) == "table" then
+    assert(#options == #players)
+  else
+    choicesMap = table.map(players, function() return options end) ---@type string[][]
+  end
+
+  local all_options = params.all_options
+  local allChoicesMap ---@type string[][]
+  if all_options then
+    if type(all_options[1]) == "table" then
+      allChoicesMap = all_options ---@type string[][]
+    else
+      allChoicesMap = table.map(players, function() return all_options end) ---@type string[][]
+    end
+  else
+    allChoicesMap = choicesMap
+  end
+
+  local req = Request:new(players, "AskForOptions")
+  req.focus_text = skillName
+  req.receive_decode = false
+  for i, p in ipairs(players) do
+    local p_choices = choicesMap[i]
+    local p_all_choices = allChoicesMap[i]
+    local data = {
+      p_choices,
+      p_all_choices,
+      { 1, 1 },
+      false,
+      skillName,
+      prompt,
+      true,
+    }
+    req:setData(p, data)
+    req:setDefaultReply(p, self:tableRandomPick(p_choices, 1))
+  end
+  req:ask()
+  local ret = {}
+  for _, p in ipairs(players) do
+    ret[p] = req:getResult(p)[1]
+  end
+  if sendLog then
+    for _, p in ipairs(players) do
+      p.room:sendLog{
+        type = "#Choice",
+        from = p.id,
+        arg = ret[p],
+        toast = true,
+      }
+    end
+  end
+  return ret
+end
 
 ---@class AskToSkillInvokeParams
 ---@field skill_name string @ 询问技能名（烧条时显示的技能名）
@@ -1726,8 +2115,7 @@ function Room:askToArrangeCards(player, params)
   elseif #areaNames == 0 then
     for i = #params.card_map, 1, -1 do
       if type(params.card_map[i]) == "string" then
-        table.insert(areaNames, 1, params.card_map[i])
-        table.remove(params.card_map, i)
+        table.insert(areaNames, 1, table.remove(params.card_map, i))
       end
     end
   end
@@ -1837,27 +2225,37 @@ function Room:askToGuanxing(player, params)
 
   --not noPut的情况：默认操作牌堆里的牌，先移至处理区，再置于牌堆顶/底
   if not noPut then
-    self:moveCardTo(cards, Card.Processing, nil, fk.ReasonPut, skillName, nil, false, player, nil, player)
+    local toProcessing = table.filter(cards, function (id) return self:getCardArea(id) == Card.DrawPile end)
+    self:moveCardTo(toProcessing, Card.Processing, nil, fk.ReasonPut, skillName, nil, false, player, nil, player)
   end
 
   local command = "AskForGuanxing"
   local max_top = top_limit[2]
   local card_map = {}
+  local area_names = {}
+  local max_limit, min_limit = {}, {}
   if max_top > 0 then
     table.insert(card_map, table.slice(cards, 1, max_top + 1))
+    table.insert(area_names, params.area_names[1])
+    table.insert(max_limit, max_top)
+    table.insert(min_limit, top_limit[1])
   end
-  if max_top < leng then
+  if bottom_limit[2] > 0 then
     table.insert(card_map, table.slice(cards, max_top + 1))
+    table.insert(area_names, params.area_names[2])
+    table.insert(max_limit, bottom_limit[2])
+    table.insert(min_limit, bottom_limit[1])
   end
   local default_pos = math.min(top_limit[2], leng - bottom_limit[1])
+
   local result = self:askToArrangeCards(player, {
     skill_name = skillName,
     card_map = card_map,
     box_size = math.min(#cards, 7),
     prompt = params.prompt,
-    max_limit = { top_limit[2] or leng, bottom_limit[2] or leng },
-    min_limit = { top_limit[1] or 0, bottom_limit[1] or 0 },
-    names = params.area_names,
+    max_limit = max_limit,
+    min_limit = min_limit,
+    names = area_names,
     free_arrange = true,
     default_choice = {table.slice(cards, 1, default_pos + 1), table.slice(cards, default_pos + 1)},
   })
@@ -2010,17 +2408,18 @@ end
 
 --- 将从Request获得的数据转化为UseCardData，或执行主动技的onUse部分
 --- 一般DIY用不到的内部函数
----@param player ServerPlayer
----@param data any
+---@param player ServerPlayer @ 使用者
+---@param data ReplyFormatResponseCard @ Request返回的数据
 ---@param params? handleUseCardParams
 ---@return UseCardDataSpec|string? @ 返回字符串则取消使用，若返回技能名，在当前询问中禁用此技能
 function Room:handleUseCardReply(player, data, params)
   local card = data.card
+  local cardObjs = data.card_objs and table.map(data.card_objs, function(e) return cbor.decode(e) end) or nil
   local targets = data.targets or {}
   local extra_data = (params or {}).extra_data or Util.DummyTable
   if type(card) == "table" then
     local card_data = card
-    local skill = Fk.skills[card_data.skill]
+    local skill = Fk.skills[card_data.skill] ---@cast skill ActiveSkill|ViewAsSkill
     local selected_cards = card_data.subcards
     if skill.interaction then skill.interaction.data = data.interaction_data end
     if skill:isInstanceOf(ActiveSkill) then
@@ -2038,6 +2437,7 @@ function Room:handleUseCardReply(player, data, params)
       local use_spec = {
         from = player,
         cards = selected_cards,
+        sub_cards = cardObjs,
         tos = tos,
         interaction_data = data.interaction_data,
       }
@@ -2051,7 +2451,7 @@ function Room:handleUseCardReply(player, data, params)
       ---@cast skill ViewAsSkill
       --Self = player
       local useResult
-      local c = skill:viewAs(player, selected_cards)
+      local c = skill:viewAs(player, selected_cards, cardObjs)
 
       local tos = {}
       if #targets > 0 then
@@ -2065,6 +2465,7 @@ function Room:handleUseCardReply(player, data, params)
       local use_spec = {
         from = player,
         cards = selected_cards,
+        sub_cards = cardObjs,
         tos = tos,
         interaction_data = data.interaction_data,
       }
@@ -2281,8 +2682,9 @@ function Room:askToUseVirtualCard(player, params)
       if #subcards > 0 then
         card:addSubcards(subcards)
       elseif params.card_filter.n[1] > 0 then
+        local exp = Exppattern:Parse(params.card_filter.pattern)
         local cards = table.filter(params.card_filter.cards, function (id)
-          return Fk:getCardById(id):matchPattern(params.card_filter.pattern)
+          return exp:match(Fk:getCardById(id))
         end)
         if #cards < params.card_filter.n[1] then
           return nil
@@ -2334,8 +2736,9 @@ function Room:askToUseVirtualCard(player, params)
       if #subcards > 0 then
         card:addSubcards(subcards)
       elseif params.card_filter.n[1] > 0 then
+        local exp = Exppattern:Parse(params.card_filter.pattern)
         local cards = table.filter(params.card_filter.cards, function (id)
-          return Fk:getCardById(id):matchPattern(params.card_filter.pattern)
+          return exp:match(Fk:getCardById(id))
         end)
         if #cards < params.card_filter.n[1] then
           return nil
@@ -2816,6 +3219,20 @@ function Room:takeAG(taker, id, notify_list)
   end
 end
 
+--- 禁用player视角的AG（不可与之交互）。
+---
+--- 若不传参（即player为nil），那么禁用所有玩家的AG。
+--- 
+--- 注意想要真正关掉AG的话应该调用closeAG。
+---@see Room.closeAG
+---@param player? ServerPlayer @ 要禁用AG的玩家
+function Room:disableAG(player)
+  if player then player:doNotify("DisableAG", "")
+  else
+    self:doBroadcastNotify("DisableAG", "")
+  end
+end
+
 --- 关闭player那侧显示的AG。
 ---
 --- 若不传参（即player为nil），那么关闭所有玩家的AG。
@@ -2851,10 +3268,9 @@ end
 ---@class AskToMiniGameParams
 ---@field skill_name string @ 烧条时显示的技能名
 ---@field game_type string @ 小游戏框关键词
----@field data_table table<integer, any> @ 以每个playerID为键的数据数组
+---@field data_table table<integer, any> @ 以每个playerID为键的数据数组 注意```prop```可以为使用model的qml框额外指定初始值
 ---@field timeout? integer @ 烧条时间，单位为秒。默认使用房间的timeout
 
--- TODO: 重构request机制，不然这个还得手动拿client_reply
 ---@param players ServerPlayer[] @ 需要参与这个框的角色
 ---@param params AskToMiniGameParams @ 各种变量
 ---@return Request
@@ -3079,10 +3495,23 @@ end
 ---@param player ServerPlayer
 ---@param num integer @ 变化量
 function Room:changeShield(player, num)
+  num = math.min(num, player:getMaxShield() - player.shield)
+  num = math.max(num, -player.shield)
   if num == 0 then return end
-  player.shield = math.max(player.shield + num, 0)
-  player.shield = math.min(player.shield, 5)
-  self:broadcastProperty(player, "shield")
+  if num > 0 then
+    self:sendLog {
+      type = "#AddShield",
+      from = player.id,
+      arg = num,
+    }
+  else
+    self:sendLog {
+      type = "#LoseShield",
+      from = player.id,
+      arg = -num,
+    }
+  end
+  self:setPlayerProperty(player, "shield", player.shield + num)
 end
 
 -- 杂项函数
@@ -3834,7 +4263,7 @@ function Room:showCards(cards, from, proposer)
 
   self:doBroadcastNotify("ShowCard", { cards, src, n })
 
-  self.logic:trigger(fk.CardShown, proposer, { cardIds = cards })
+  self.logic:trigger(fk.CardShown, proposer, { cardIds = cards, from = from })
 end
 
 --- 将虚拟牌展示到桌面（仅动画）
@@ -3966,8 +4395,9 @@ function Room:getCardsFromPileByRule(pattern, num, fromPile)
   end
 
   local matchedIds = {}
+  local exp = Exppattern:Parse(pattern)
   for _, id in ipairs(pileToSearch) do
-    if Fk:getCardById(id):matchPattern(pattern) then
+    if exp:match(Fk:getCardById(id)) then
       table.insert(matchedIds, id)
     end
   end
@@ -3982,12 +4412,128 @@ function Room:getCardsFromPileByRule(pattern, num, fromPile)
   local i
   for _ = 1, loopTimes do
     i = self:random(1, #matchedIds)
-    table.insert(cardPack, matchedIds[i])
-    table.remove(matchedIds, i)
+    table.insert(cardPack, table.remove(matchedIds, i))
   end
 
   return cardPack
 end
 
+function Room:getIndexFromHuman(idx)
+  idx = idx or 1
+  local humanIdx = table.findIndex(self.players, function (p)
+    return p.id > 0
+  end)
+  if humanIdx and idx > 1 and idx < (#self.players + 1) then
+    local to
+    local distance = idx - 1
+    if humanIdx + distance > #self.players then
+      to = self.players[humanIdx + distance - #self.players]
+    else
+      to = self.players[humanIdx + distance]
+    end
+    return table.indexOf(self.players, to)
+  else
+    return humanIdx or -1
+  end
+end
+
+---@param roles string[]
+function Room:quickSetPlayerRole(roles)
+  if Fk.quickStartConfig then
+    local arr = {}
+    local _roles = table.simpleClone(roles)
+    local map = Fk.quickStartConfig["players"] or {} --[[@as table]]
+    for k, v in pairs(map) do
+      if v["role"] then
+        local idx = self:getIndexFromHuman(tonumber(k))
+        if idx == -1 then error("Index doesn't exist!") end
+        
+        if table.contains(_roles, v["role"]) then
+          arr[idx] = v["role"]
+          table.removeOne(_roles, v["role"])
+        end
+      end
+    end
+
+    for i = 1, #roles do
+      if not arr[i] and #_roles > 0 then
+        arr[i] = self:tableRandomPick(_roles)
+      end
+      roles[i] = arr[i]
+    end
+    return arr
+  end
+end
+
+---@return ServerPlayer[]
+function Room:quickSetPlayerGeneral()
+  local arr = {}
+  if Fk.quickStartConfig then
+    local map = Fk.quickStartConfig["players"] or {} --[[@as table]]
+    for k, v in pairs(map) do
+      local idx = self:getIndexFromHuman(tonumber(k))
+      if idx == -1 then error("Index doesn't exist!") end
+      local pl = self.players[idx]
+      if pl then
+        if v["general"] then
+          if v["deputyGeneral"] then
+            self:prepareGeneral(pl, v["general"], v["deputyGeneral"])
+          else
+            self:prepareGeneral(pl, v["general"], "", true)
+          end
+          pl.kingdom = v["kingdom"] or Fk.generals[v["general"]].kingdom or "wei"
+          self:notifyProperty(pl, pl, "kingdom")
+          table.insert(arr, pl)
+        end
+      end
+    end
+  end
+  return arr
+end
+
+function Room:handleQuickStart()
+  if not Fk.quickStartConfig then return end
+  local map = Fk.quickStartConfig["players"] or {} --[[@as table]]
+  local hadControlOther = false
+  for k, v in pairs(map) do
+    local idx = self:getIndexFromHuman(tonumber(k))
+    if idx == -1 then error("Index doesn't exist!") end
+    local pl = self.players[idx]
+    if pl then
+
+      -- 根据传入属性做不同操作
+      if v["maxHp"] then
+        self:changeMaxHp(pl, v["maxHp"] - pl.maxHp)
+      end
+      if v["hp"] then
+        self:changeHp(pl, v["hp"] - pl.hp, nil, "quick_debug")
+      end
+      if v["skills"] then
+        for _, skill in ipairs(v["skills"]) do
+          self:handleAddLoseSkills(pl, skill, nil, false, true)
+        end
+      end
+      if v["equips"] then
+        for _, e in ipairs(v["equips"]) do
+          local cards = table.filter(self.draw_pile, function (id)
+            return Fk:getCardById(id).name == e
+          end)
+          if #cards > 0 then
+            self:moveCardIntoEquip(pl, cards[1], "quick_debug", true)
+          end
+        end
+      end
+      if v["controlOther"] then
+        if hadControlOther then error("Already had another \"controlOther\" player!") end
+        for _, p in ipairs(self:getOtherPlayers(pl)) do
+          pl:control(p)
+        end
+        hadControlOther = true
+      end
+
+
+    end
+  end
+end
 
 return Room

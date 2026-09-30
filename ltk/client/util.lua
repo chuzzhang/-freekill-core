@@ -36,6 +36,7 @@ function M:getGeneralDetail(name)
     headnote = general.headnote,
     endnote = general.endnote,
   }
+  local skill_names = general:getSkillNameList(true, false)
   for _, s in ipairs(general.all_skills) do
     local s_name = s[1]
     table.insert(ret.skill, {
@@ -46,11 +47,13 @@ function M:getGeneralDetail(name)
     for _ = 1, 2 do -- 最多两层相关技能
       for _, rs in ipairs(Fk.skill_skels[s_name].related_skills) do
         s_name = rs
-        table.insert(ret.skill, {
-          name = s_name,
-          description = Fk:getDescription(s_name),
-          is_related_skill = true,
-        })
+        if not table.contains(skill_names, s_name) then -- 如果不存在，插入
+          table.insert(ret.skill, {
+            name = s_name,
+            description = Fk:getDescription(s_name),
+            is_related_skill = true,
+          })
+        end
       end
     end
   end
@@ -71,6 +74,10 @@ end
 
 function M:getSameGenerals(name)
   return Fk:getSameGenerals(name)
+end
+
+function M:canMatchInHegemony(general, deputy, enabled_kingdoms)
+  return Fk:canMatchInHegemony(general, deputy, enabled_kingdoms)
 end
 
 function M:isCompanionWith(general, general2)
@@ -410,6 +417,13 @@ function M:getCardName(cardId, filterCard)
   return card:getDynamicName(Self) or ""
 end
 
+function M:getEnableKingdoms(general)
+  return Fk:getKingdomsNeedToChoose(general)
+end
+
+function M:getKingdomInHegemony(general, deputy, enabled_kingdoms)
+  return Fk:getKingdomInHegemony(general, deputy, enabled_kingdoms)
+end
 
 -- Handle skills
 
@@ -421,7 +435,9 @@ function M:getSkillData(skill_name)
     freq = "active"
   end
   local frequency
-  if skill:hasTag(Skill.Limited, false) then
+  if skill:hasTag(Skill.Compulsory, false) then
+    frequency = "compulsory"
+  elseif skill:hasTag(Skill.Limited, false) then
     frequency = "limit"
   elseif skill:hasTag(Skill.Wake) then
     frequency = "wake"
@@ -489,6 +505,22 @@ function M:getVirtualEquipData(playerid, cid)
     type = c.type,
     subtype = c:getSubtypeString(),
   }
+end
+
+function M:getSkinNamesByGeneral(general)
+  return Fk:getSkinNamesByGeneral(general)
+end
+
+function M:getSkinByName(general, name)
+  local skin_data =  Fk:getSkinByName(general, name)
+  if (skin_data or {}).name then
+    return {
+      name = skin_data.name,
+      path = skin_data.path,
+      url = skin_data.path .. skin_data.name
+    }
+  end
+  return
 end
 
 function M:findMosts()          -- 从所有的玩家结算数据中找出最佳/差玩家
@@ -988,6 +1020,7 @@ function M:getMiniGame(gtype, p, data)
   data = json.decode(data)
   return {
     qml_path = type(spec.qml_path) == "function" and spec.qml_path(p, data) or spec.qml_path,
+    model = type(spec.model) == "function" and spec.model(p, data) or spec.model,
   }
 end
 

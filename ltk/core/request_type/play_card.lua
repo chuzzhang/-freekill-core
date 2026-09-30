@@ -62,6 +62,7 @@ function ReqPlayCard:cardValidity(cid)
 end
 
 function ReqPlayCard:skillButtonValidity(name)
+  if self.sub_selection_flag then return false end -- 处于二级选择时不允许切换技能
   local player = self.player
   local skill = Fk.skills[name]---@type ActiveSkill | ViewAsSkill
   if skill:isInstanceOf(ViewAsSkill) then
@@ -103,8 +104,8 @@ function ReqPlayCard:feasible()
       return ReqActiveSkill.feasible(self)
     else -- viewasskill
       ---@cast skill ViewAsSkill
-      card = skill:viewAs(player, self.pendings)
-      if card == nil then
+      card = self:getUsingCard()
+      if card == nil and not self.sub_selection_flag then
         return skill:feasible(player, table.map(self.selected_targets, Util.Id2PlayerMapper), self.pendings)
       end
     end
@@ -113,7 +114,7 @@ function ReqPlayCard:feasible()
   end
   if card then
     local skill = card:getSkill(player)
-    ret = skill:feasible(player, table.map(self.selected_targets, Util.Id2PlayerMapper), { card.id }, card)
+    ret = skill:feasible(player, table.map(self.selected_targets, Util.Id2PlayerMapper), { card.id }, card) 
     and skill:canUse(player, card, self.extra_data)
     and not player:prohibitUse(card)
   end
@@ -148,7 +149,7 @@ function ReqPlayCard:doOKButton()
   local reply = {
     card = self.selected_card:getEffectiveId(),
     targets = self.selected_targets,
-    special_skill = self.skill_name
+    special_skill = self.skill_name,
   }
   if ClientInstance then
     ClientInstance:notifyUI("ReplyToServer", reply)
@@ -159,13 +160,16 @@ end
 
 function ReqPlayCard:doCancelButton()
   self.scene:update("SpecialSkills", "1", { skills = {} })
+  if self.sub_selection_flag then
+    return ReqActiveSkill.doCancelButton(self)
+  end
   if self.skill_name then
     --ReqPlayCard时，点“取消”按钮自带notifyUI，而ReqUseCard、ReqResponseCard不会
     --self.scene:notifyUI()
     self:selectSkill(self.skill_name, { selected = false })
     return
   end
-  return ReqActiveSkill:doCancelButton()
+  return ReqActiveSkill.doCancelButton(self)
 end
 
 function ReqPlayCard:doEndButton()
@@ -192,12 +196,28 @@ function ReqPlayCard:selectCard(cid, data)
     scene:unselectOtherCards(cid)
     -- self:setSkillPrompt(self.selected_card.skill, self.selected_card:getEffectiveId())
     local sp_skills = {}
-    if self.selected_card.special_skills and table.contains(self.player:getCardIds("h"), cid) then
-      sp_skills = table.simpleClone(self.selected_card.special_skills)
-      if self.player:canUse(self.selected_card) then
-        table.insert(sp_skills, 1, "_normal_use")
-      else
-        self:selectSpecialUse(sp_skills[1])
+    if self.selected_card.special_skills then
+      for _, s in ipairs(self.selected_card.special_skills or {}) do
+        local skill = Fk.skills[s]
+        if skill:isInstanceOf(ActiveSkill) then
+          skill = skill  ---@cast skill ActiveSkill
+          if skill:canUse(self.player) and table.contains(self.player:getCardIds("h"), cid) then
+            table.insert(sp_skills, s)
+          end
+        elseif skill:isInstanceOf(ViewAsSkill) then
+          skill = skill  ---@cast skill ViewAsSkill
+          if skill:enabledAtPlay(self.player) then
+            table.insert(sp_skills, s)
+          end
+        end
+      end
+      if #sp_skills > 0 then
+        if self.player:canUse(self.selected_card) then
+          table.insert(sp_skills, 1, "_normal_use")
+        else
+          self:selectSpecialUse(sp_skills[1])
+        end
+        self.scene:update("SpecialSkills", "1", { skills = sp_skills })
       end
     end
     self.scene:update("SpecialSkills", "1", { skills = sp_skills })

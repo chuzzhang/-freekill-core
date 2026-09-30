@@ -87,7 +87,11 @@ function SkillEffect:main()
       room:doIndicate(player.id, tos)
     end
 
-    if skill:hasTag(Skill.Switch) and not skill.is_delay_effect then
+    if skill:hasTag(Skill.Rhyme) then
+      data.skill_data.switch_state = player:getSwitchSkillState(skill:getSkeleton().name)
+    end
+    if skill:hasTag(Skill.Switch) and not skill.is_delay_effect and
+      not (type(cost_data) == "table" and cost_data.no_switch) then
       local switchSkillName = skill:getSkeleton().name ---@type string
       data.skill_data.switch_state = player:getSwitchSkillState(switchSkillName)
       room:setPlayerMark(

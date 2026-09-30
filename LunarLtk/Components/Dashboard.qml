@@ -83,4 +83,8 @@ RowLayout {
     dataModel.applyChange(uiUpdate);
     handcardAreaItem.applyChange(uiUpdate);
   }
+
+  function clearVisiblePile() {
+    if (dataModel?.visible_ids) dataModel.visible_ids = [];
+  }
 }

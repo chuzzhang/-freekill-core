@@ -15,6 +15,14 @@ MetroButton {
 
   property string answer: dataModel?.result[0] ?? ""
 
+  Connections {
+    target: dataModel
+    function onAccepted() {
+      answer = dataModel.result[0];
+      roomScene.popupItem?.finished();
+    }
+  }
+
   text: Ltk.processPrompt(answer)
 
   onAnswerChanged: {
@@ -23,11 +31,7 @@ MetroButton {
   }
 
   onClicked: {
-    if (!dataModel.cancelable && dataModel.choices.length < 2) return;
+    if (!dataModel.cancelable && !dataModel.detailed && dataModel.choices.length < 2) return;
     roomScene.showPopup(Qt.createComponent("LunarLtk.Pages.Popups", "ChoicesBox"), { dataModel, noOneLine: true });
-    dataModel.accepted.connect(() => {
-      answer = dataModel.result[0];
-      roomScene.popupItem?.finished();
-    });
   }
 }

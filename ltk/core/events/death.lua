@@ -36,6 +36,7 @@ fk.AskForPeachesDone = DyingEvent:subclass("fk.AskForPeachesDone")
 ---@field public who ServerPlayer @ 死亡角色
 ---@field public killer? ServerPlayer @ 凶手
 ---@field public damage? DamageData @ 造成此次死亡的伤害数据
+---@field public hideRole? boolean @ 不揭示阵亡角色的身份
 
 --- 描述和死亡事件有关的数据
 ---@class DeathData: DeathDataSpec, TriggerData

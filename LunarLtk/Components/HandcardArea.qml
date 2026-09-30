@@ -146,7 +146,7 @@ Item {
   function dragMovement() {
     if (!Config.enableSuperDrag) return;
     const card = draggingCard;
-    if (!card) return;
+    if ((card?.dataModel?.cardId || 0) === 0) return; // 直接禁止虚拟牌拖动
     const x = card.x + card.dragCenter.x;
     const y = card.y + card.dragCenter.y;
     if (y >= roomScene.dashboard.y && x <= roomScene.getPhoto(Cpp.self.id).x) {
@@ -240,20 +240,20 @@ Item {
   }
 
   function selectCard(card) {
-    if (card.selectable) cardSelected(card.dataModel.cardId, card.selected);
+    if (card.selectable) cardSelected(card.dataModel.uniqueId, card.selected);
     adjustCards();
   }
 
   function doubleClickCard(card) {
     if (Config.doubleClickUse) {
-      Lua.updateRequestUI("CardItem", card.dataModel.cardId, "doubleClick", { selected: card.selected, doubleClickUse: Config.doubleClickUse, autoTarget: Config.autoTarget } );
+      Lua.updateRequestUI("CardItem", card.dataModel.uniqueId, "doubleClick", { selected: card.selected, doubleClickUse: Config.doubleClickUse, autoTarget: Config.autoTarget } );
     }
   }
 
   function enableCards(cardIds) {
     let card, i;
     cards.forEach(card => {
-      card.dataModel.selectable = cardIds.includes(card.dataModel.cardId);
+      card.dataModel.selectable = cardIds.includes(card.dataModel.uniqueId);
       if (!card.dataModel.selectable) {
         card.selected = false;
       }
@@ -271,7 +271,11 @@ Item {
 
   function syncCards() {
     // sync expandedCards
-    const allCards = [...dataModel.handcards, ...dataModel.expandedCards];
+    const visibleIds = dataModel.visible_ids ?? [];
+    let allCards = [...dataModel.handcards, ...dataModel.expandedCards]
+    if (visibleIds.length > 0) {
+      allCards = allCards.filter(model => visibleIds.includes(model.uniqueId));
+    }
     const orderedCards = [];
     const extractedCards = [];
     for (const card of cards) {
@@ -283,7 +287,7 @@ Item {
       }
     }
 
-    const myPos = roomScene.mapFromItem(root, 0, 0);
+    const myPos = Ltk.roomScene.mapFromItem(root, 0, 0);
     for (const card of remove(extractedCards)) {
       cards.splice(cards.indexOf(card), 1);
       card.origX = myPos.x + width;
@@ -292,15 +296,16 @@ Item {
       card.goBack(true);
     }
 
-    cards = orderedCards;
+    cards = orderedCards.filter(c => c !== undefined);
     const component = Qt.createComponent("LunarLtk.Components", "CardItem");
     for (const model of allCards) {
       if (cards.find(e => e.dataModel === model)) continue;
-      const card = component.createObject(roomScene.dynamicCardArea, {
+      const card = component.createObject(Ltk.roomScene.dynamicCardArea, {
         x: myPos.x + width,
         y: myPos.y,
         dataModel: model,
       });
+      model.selectedChanged() // 手动刷新一下
       const selectable = model.selectable;
       if (dataModel.expandedCards.includes(model)) {
         // 手牌区固定不显示脚注了，之前手牌用来显示区域或提示的文本改了个UI

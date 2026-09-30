@@ -73,6 +73,7 @@ function fk.readUsableSpecToSkill(skill, spec)
   }
   skill.distance_limit = spec.distance_limit or skill.distance_limit
   skill.expand_pile = spec.expand_pile
+  skill.visible_pile = spec.visible_pile
   skill.times = spec.times or skill.times
   skill.is_delay_effect = not not spec.is_delay_effect
   skill.late_refresh = not not spec.late_refresh
@@ -120,12 +121,14 @@ end
 ---@field public on_use? fun(self: ActiveSkill, room: Room, skillUseEvent: SkillUseData): any
 ---@field public prompt? string|fun(self: ActiveSkill, player: Player, selected_cards: integer[], selected_targets: Player[]): string @ 提示信息
 ---@field public interaction? fun(self: ActiveSkill, player: Player): table? @ 选项框
+---@field public refresh_interaction? fun(self: ActiveSkill, player: Player, selected_cards: integer[], selected_targets: Player[], extra_data: any): table? @ 用于给interaction传递额外信息，例如按钮亮暗
 ---@field public card_tip? fun(self: ActiveSkill, player: Player, to_select: integer, selected: integer[], selected_targets: Player[], card?: Card, selectable: boolean, extra_data: any): string|CardTipDataSpec? @ 显示在牌上的提示
 ---@field public target_tip? fun(self: ActiveSkill, player: Player, to_select: Player, selected: Player[], selected_cards: integer[], card?: Card, selectable: boolean, extra_data: any): string|TargetTipDataSpec? @ 显示在目标武将牌脸上的提示
 ---@field public handly_pile? boolean @ 是否能够选择“如手牌使用或打出”的牌
 ---@field public click_count? boolean @ 是否在点击按钮瞬间就计数并播放特效和语音
 ---@field public include_equip? boolean @ 选牌时是否展开装备区
 ---@field public fix_targets? fun(self: ActiveSkill, player: Player, selected_cards: integer[], card: Card, extra_data: any): Player[]? @ 设置固定目标
+---@field public visible_pile? integer[] | string | fun(self: ActiveSkill, player: Player): integer[] | string @ 可见的手牌id，同时筛选手牌和expand_pile。如果返回值为字符串，当返回"_expand_pile"时会转为expand_pile，为其他字符串时则转为对应name的私人牌堆。注意：这是纯ui方案，不要用这种方式来做合法牌的筛选
 
 ---@class CardSkillSpec: UsableSkillSpec
 ---@field public mod_target_filter? fun(self: ActiveSkill, player: Player, to_select: Player, selected: Player[], card: Card, extra_data: any): any @ 判定目标是否合法（例如不能杀自己，火攻无手牌目标）
@@ -142,6 +145,7 @@ end
 ---@field public offset_func? fun(self: CardSkill, room: Room, effect: CardEffectData): any @ 重新定义抵消方式
 ---@field public prompt? string|fun(self: CardSkill, player: Player, selected_cards: integer[], selected_targets: Player[], extra_data: any): string @ 提示信息
 ---@field public interaction? fun(self: CardSkill, player: Player, card: Card, extra_data: any): table? @ 选项框
+---@field public refresh_interaction? fun(self: CardSkill, player: Player, selected_cards: integer[], selected_targets: Player[], card: Card, extra_data: any): table? @ （暂时没用）用于给interaction传递额外信息，例如按钮亮暗
 ---@field public card_tip? fun(self: ActiveSkill, player: Player, to_select: integer, selected: integer[], selected_targets: Player[], card?: Card, selectable: boolean, extra_data: any): string|CardTipDataSpec? @ 显示在牌上的提示
 ---@field public target_tip? fun(self: CardSkill, player: Player, to_select: Player, selected: Player[], selected_cards: integer[], card?: Card, selectable: boolean, extra_data: any): string|TargetTipDataSpec? @ 显示在目标武将牌脸上的提示
 
@@ -151,7 +155,10 @@ end
 ---@field public target_filter? fun(self: ViewAsSkill, player: Player?, to_select: Player, selected: Player[], selected_cards: integer[], card: Card?, extra_data: UseExtraData|table?): any @ 判定目标能否选择
 ---@field public feasible? fun(self: ViewAsSkill, player: Player, selected: Player[], selected_cards: integer[], card: Card): any @ 判断卡牌和目标是否符合技能限制
 ---@field public on_use? fun(self: ViewAsSkill, room: Room, skillUseEvent: SkillUseData, card: Card, params: handleUseCardParams?): UseCardDataSpec|string?
----@field public view_as fun(self: ViewAsSkill, player: Player, cards: integer[]): Card? @ 判断转化为什么牌
+---@field public view_as fun(self: ViewAsSkill, player: Player, cards: integer[], sub_cards?: Card[]): Card? @ 判断转化为什么牌（二级菜单时sub_cards有值，否则无值）
+---@field public sub_prompt? string|fun(self: ViewAsSkill, player: Player, selected_cards: integer[], selected_targets: Player[], selected_sub_cards: Card[], selected_sub_targets: Player[]): string @ 二级菜单提示信息
+---@field public sub_cards? string[]|fun(self: ViewAsSkill, player: Player, selected: integer[], selected_targets: Player[], extra_data: UseExtraData|table): Card[]? @ （二级菜单）判断此时点击确认后需要额外弹出的牌
+---@field public sub_card_filter? fun(self: ViewAsSkill, player: Player, to_select: Card, selected: Card[], selected_cards: integer[], extra_data: UseExtraData|table?): boolean? @ （二级菜单）判断此时是否能点击额外弹出的牌
 ---@field public on_cost? fun(self: ViewAsSkill, player: ServerPlayer, data: SkillUseData, extra_data?: UseExtraData|table):CostData|table? @ 自定义技能的消耗信息
 ---@field public history_branch? string|fun(self: ViewAsSkill, player: ServerPlayer, data: SkillUseData, extra_data?: UseExtraData|table):string? @ 发动技能时增加添加对应某处分支的次数
 ---@field public pattern? string
@@ -161,19 +168,22 @@ end
 ---@field public after_use? fun(self: ViewAsSkill, player: ServerPlayer, use: UseCardData | RespondCardData): string? @ 使用/打出此牌后执行的内容
 ---@field public prompt? string|fun(self: ViewAsSkill, player: Player, selected_cards: integer[], selected: Player[]): string
 ---@field public interaction? fun(self: ViewAsSkill, player: Player): table? @ 选项框
+---@field public refresh_interaction? fun(self: ViewAsSkill, player: Player, selected_cards: integer[], selected_targets: Player[], extra_data: any): table? @ 用于给interaction传递额外信息，例如按钮亮暗
 ---@field public handly_pile? boolean @ 是否能够选择“如手牌使用或打出”的牌
 ---@field public mute_card? boolean @ 是否不播放卡牌特效和语音。一个牌名的默认不播放，其他默认播放
 ---@field public click_count? boolean @ 是否在点击按钮瞬间就计数并播放特效和语音
+---@field public immediate_sub? boolean @ 是否在点选卡牌瞬间就进入二级选择（如果可以）
 ---@field public enabled_at_nullification? fun(self: ViewAsSkill, player: Player, data: CardEffectData): boolean? @ 判断一张牌是否能被此技能转化无懈来响应
 ---@field public include_equip? boolean @ 选牌时是否展开装备区
 ---@field public fix_targets? fun(self: ViewAsSkill, player: Player, selected_cards: integer[], card: Card, extra_data: any): Player[]? @ 设置固定目标
+---@field public visible_pile? integer[] | string | fun(self: ActiveSkill, player: Player): integer[] | string @ 可见的手牌id，同时筛选手牌和expand_pile。如果返回值为字符串，当返回"_expand_pile"时会转为expand_pile，为其他字符串时则转为对应name的私人牌堆。注意：这是纯ui方案，不要用这种方式来做合法牌的筛选
 
 ---@class DistanceSpec: StatusSkillSpec
 ---@field public correct_func? fun(self: DistanceSkill, from: Player, to: Player, card?: Card): integer?
 ---@field public fixed_func? fun(self: DistanceSkill, from: Player, to: Player, card?: Card): integer?
 
 ---@class ProhibitSpec: StatusSkillSpec
----@field public is_prohibited? fun(self: ProhibitSkill, from: Player?, to: Player, card: Card): any
+---@field public is_prohibited? fun(self: ProhibitSkill, from?: Player, to: Player, card: Card): any
 ---@field public prohibit_use? fun(self: ProhibitSkill, player: Player, card: Card): any
 ---@field public prohibit_response? fun(self: ProhibitSkill, player: Player, card: Card): any
 ---@field public prohibit_discard? fun(self: ProhibitSkill, player: Player, card: Card): any
@@ -317,7 +327,7 @@ end
 ---@field public ui_settings? any @ ui规则
 ---@field public main_mode? string @ 主模式名（用于判断此模式是否为某模式的衍生）
 ---@field public winner_getter? fun(self: GameMode, victim: ServerPlayer): string @ 在死亡流程中用于判断是否结束游戏，并输出胜利者身份
----@field public surrender_func? fun(self: GameMode, playedTime: number): table
+---@field public surrender_func? fun(self: GameMode, playedTime: number, player: Player): table  @ 投降条件判断
 ---@field public is_counted? fun(self: GameMode, room: Room): boolean @ 是否计入胜率统计
 ---@field public feasible? fun(self: GameMode, settings: any): boolean @ 是否允许创房间
 ---@field public get_adjusted? fun(self: GameMode, player: ServerPlayer): table @ 调整玩家初始属性
@@ -395,11 +405,11 @@ end
 
 -- TODO: 断连 不操作的人观看 现在只做了专为22设计的框
 ---@class MiniGameSpec
----@field name string
----@field qml_path string | fun(player: Player, data: any): string
----@field update_func? fun(player: ServerPlayer, data: any)
----@field default_choice? fun(player: ServerPlayer, data: any): any
-
+---@field name string 唯一标识符
+---@field qml_path string | fun(player: Player, data: any): string 框的qml路径
+---@field update_func? fun(player: ServerPlayer, data: any) 更新函数
+---@field default_choice? fun(player: ServerPlayer, data: any): any 默认值函数 
+---@field model? QmlComponent | fun(player: ServerPlayer, data: any): QmlComponent 给dataModel的model赋值，通常是一个table，里面是一些初始属性
 
 ---@class CardTipDataSpec
 ---@field content string

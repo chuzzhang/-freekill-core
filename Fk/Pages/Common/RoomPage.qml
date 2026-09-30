@@ -496,17 +496,20 @@ Item {
             height: 30
             text: {
               let ret = screenName;
+              if (Config.hideScreenName) {
+                ret = seat !== -1 ? Lua.tr("seat#" + seat.toString()) : Lua.tr("Player") + (index + 1).toString();
+              }  // 如果有座位号，显示几号位；否则用序号
               if (observing) {
-                ret = '*旁观* ' + ret;
+                ret = '*' + Lua.tr('Observe') + '* ' + ret;
               }
               if (netState == 2) {
-                ret = '<font color="blue">*托管*</font> ' + ret;
+                ret = '<font color="blue">*' + Lua.tr('Trust') + '*</font> ' + ret;
               } else if (netState == 3) {
-                ret = '<font color="red">*逃跑*</font> ' + ret;
+                ret = '<font color="red">*' + Lua.tr('Run Away') + '*</font> ' + ret;
               } else if (netState == 5) {
-                ret = '<font color="blue">*人机*</font> ' + ret;
+                ret = '<font color="blue">*' + Lua.tr('Robot') + '*</font> ' + ret;
               } else if (netState == 6) {
-                ret = '<font color="gray">*离线*</font> ' + ret;
+                ret = '<font color="gray">*' + Lua.tr('Offline') + '*</font> ' + ret;
               }
               return ret;
             }
@@ -542,6 +545,7 @@ Item {
           observing: p.observing,
           netState: p.state,
           avatar: p.avatar,
+          seat: p.seat,
         });
       });
     }
@@ -796,6 +800,15 @@ Item {
     });
     overlay.addCallback(Command.ReplayerSpeedChange, (_, j) => {
       root.replayerSpeed = parseFloat(j);
+    });
+
+    overlay.addCallback("AddObserver", (_, d) => {
+      const wr = gameLoader.item;
+      if (wr && wr.addObserver) wr.addObserver(null, d);
+    });
+    overlay.addCallback("RemoveObserver", (_, d) => {
+      const wr = gameLoader.item;
+      if (wr && wr.removeObserver) wr.removeObserver(null, d);
     });
   }
 }

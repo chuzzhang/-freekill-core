@@ -25,6 +25,7 @@
 ---@field public related_other_skills string [] @ 武将相关的属于其他武将的技能，例如孙策的英姿
 ---@field public all_skills table @ 武将的所有技能，包括相关技能和属于其他武将的技能
 ---@field public companions string [] @ 有珠联璧合关系的武将
+---@field public companion_rule function [] @ 珠联璧合关系规则函数列表
 ---@field public headnote string @ 顶注。在武将介绍界面出现
 ---@field public endnote string @ 尾注。在武将介绍界面出现
 ---@field public hidden boolean @ 不在选将框里出现，可以点将，可以在武将一览里查询到
@@ -74,6 +75,7 @@ function General:initialize(package, name, kingdom, hp, maxHp, gender)
   self.all_skills = {} -- 包含related_skills信息，UI用
 
   self.companions = {}
+  self.companion_rule = {}
 
   self.headnote = ""
   self.endnote = ""
@@ -172,9 +174,9 @@ function General:getSkillNameList(include_lord, include_related)
   local skills = table.connect(self.skills, other_skills)
   for _, skill in ipairs(skills) do
     if include_lord or not skill:hasTag(Skill.Lord) then
-      table.insert(ret, skill.name)
+      table.insertIfNeed(ret, skill.name)
       if include_related then
-        table.insertTable(ret, skill.skeleton.related_skills)
+        table.insertTableIfNeed(ret, skill.skeleton.related_skills)
         for _, rs in ipairs(skill.skeleton.related_skills) do -- 最多两层相关技能
           table.insertTableIfNeed(ret, Fk.skill_skels[rs].related_skills)
         end
@@ -183,14 +185,14 @@ function General:getSkillNameList(include_lord, include_related)
   end
   if include_related then
     for _, skill in ipairs(self.related_other_skills) do
-      table.insert(ret, skill)
+      table.insertIfNeed(ret, skill)
     end
   end
   return ret
 end
 
---- 为武将增加珠联璧合关系武将（1个或多个）。
----@param name string|string[]  @ 武将名（表）
+--- 为武将增加珠联璧合关系。
+---@param name string|string[] @ 武将名（表）
 function General:addCompanions(name)
   if type(name) == "table" then
     table.insertTable(self.companions, name)
@@ -199,20 +201,46 @@ function General:addCompanions(name)
   end
 end
 
+--- 为武将添加珠联璧合关系函数
+--- @param func fun(self: General, other: General): boolean 返回true表示两者构成珠联璧合
+function General:addCompanionRule(func)
+  table.insert(self.companion_rule, func)
+end
+
 --- 是否与另一武将构成珠联璧合关系。
 ---@param other General @ 另一武将
 ---@return boolean
 function General:isCompanionWith(other)
   assert(other:isInstanceOf(General))
   if self == other then return false end
-  return table.contains(self.companions, other.name) or table.contains(other.companions, self.name)
-    or (not not string.find(self.name, "lord") and (other.kingdom == self.kingdom or other.subkingdom == self.kingdom))
-    or (not not string.find(other.name, "lord") and (self.kingdom == other.kingdom or self.subkingdom == other.kingdom))
-    or (not not string.find(self.name, "all_comp") or not not string.find(other.name, "all_comp")) -- all_comp 所有都珠联璧合
+  if table.contains(self.companions, other.name) or table.contains(other.companions, self.name) then return true end
+  for _, rule in ipairs(self.companion_rule) do
+    if rule(self, other) then return true end
+  end
+  return false
 end
 
 function General:addAttachedPersonalMark(mark)
   self.attached_personal_mark = mark
+end
+
+--- 是否为男性（包括双性）
+---@return boolean
+function General:isMale()
+  return self.gender == General.Male or self.gender == General.Bigender
+end
+
+--- 是否为女性（包括双性）
+---@return boolean
+function General:isFemale()
+  return self.gender == General.Female or self.gender == General.Bigender
+end
+
+--- 是否包含某势力
+---@param kingdom string
+---@return boolean
+function General:hasKingdom(kingdom)
+  return self.kingdom == kingdom or self.subkingdom == kingdom
 end
 
 return General

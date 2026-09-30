@@ -216,6 +216,7 @@ function Round:main()
   end
 
   if roundCount == 1 then
+    room:handleQuickStart()
     logic:trigger(fk.GameStart, room.current, data)
     room:actExtraTurn()
   end
@@ -227,6 +228,12 @@ function Round:main()
   self:action()
   logic:trigger(fk.RoundEnd, room.current, data)
   room:actExtraTurn()
+
+  if room:getSettings("WangzhanBattleRoyal") and
+    ((#room.players == 8 and roundCount > 3) or (#room.players > 5 and roundCount > 4)) then
+    room:addSkill("#WangzhanBattleRoyal")
+    room:setBanner("@[:]WangzhanBattleRoyal", "WangzhanBattleRoyal")
+  end
 end
 
 function Round:clear()

@@ -197,11 +197,11 @@ Fk:loadTranslationTable({
   -- ["Copy Audio Text"] = "复制语音文本",
 
   ["$WelcomeToLobby"] = "Welcome to FreeKill lobby!",
-  ["GameMode"] = "Game mode: ",
-  ["LuckCardNum"] = "Luck card count: ",
-  ["ResponseTime"] = "Operation time (sec): ",
-  ["GeneralBoxNum"] = "Character selection count: ",
-  ["CardPackages"] = "Enabled card pacakges: ",
+  ["GameMode"] = "Game mode",
+  ["LuckCardNum"] = "Luck card count",
+  ["ResponseTime"] = "Operation time (sec)",
+  ["GeneralBoxNum"] = "Character selection count",
+  ["CardPackages"] = "Enabled card pacakges",
   ["IncludeFreeAssign"] = "<font color=\"red\">Free assign enabled</font>",
   ["IncludeDeputy"] = "<font color=\"red\">Deputy character enabled</font>",
 
@@ -534,11 +534,13 @@ Fk:loadTranslationTable({
   -- damage, heal and lose HP
   ["#Damage"] = "%to dealt %arg %arg2 DMG to %from",
   ["#DamageWithNoFrom"] = "%from took %arg %arg2 DMG",
-  ["#LoseHP"] = "%from lost %arg HP",
-  ["#HealHP"] = "%from healed %arg HP",
+  ["#LoseHP"] = "%from lost %arg HP %arg2",
+  ["#HealHP"] = "%from healed %arg HP %arg2",
   ["#ShowHPAndMaxHP"] = "%from now has %arg HP (max HP = %arg2)",
   ["#LoseMaxHP"] = "%from lost %arg max HP",
   ["#HealMaxHP"] = "%from healed %arg max HP",
+  ["#LoseShield"] = "%from lost %arg shield",
+  ["#AddShield"] = "%from gained %arg shield",
 
   -- dying and death
   ["#EnterDying"] = "%from is dying now",

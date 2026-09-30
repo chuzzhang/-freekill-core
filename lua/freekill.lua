@@ -99,6 +99,12 @@ dofile "lua/fk_ex.lua"
 
 Fk = Engine:new()
 dofile "ltk/init.lua"
+
+-- C++注入的快速启动配置（仅单机模式存在）
+if __quickStartConfig then
+  Fk.quickStartConfig = json.decode(__quickStartConfig)
+  __quickStartConfig = nil
+end
 Fk:loadPackages()
 
 local boardgameCount = 0

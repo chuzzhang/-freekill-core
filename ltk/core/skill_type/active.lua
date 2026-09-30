@@ -8,6 +8,7 @@
 ---@field public max_card_num integer
 ---@field public card_num integer
 ---@field public interaction any
+---@field public refresh_interaction function
 ---@field public prompt string | function? @ 技能提示
 ---@field public handly_pile boolean?  @ 是否能够选择“如手牌使用或打出”的牌
 ---@field public click_count? boolean @ 是否在点击按钮瞬间就计数并播放特效和语音
@@ -189,6 +190,22 @@ end
 function ActiveSkill:feasible(player, selected, selected_cards)
   return #selected >= self:getMinTargetNum(player) and #selected <= self:getMaxTargetNum(player)
     and #selected_cards >= self:getMinCardNum(player) and #selected_cards <= self:getMaxCardNum(player)
+end
+
+---@param player Player @ 使用者
+---@param selected_targets Player[] @ 已选目标
+---@param selected_cards integer[] @ 已选牌
+---@return table?
+function ActiveSkill:refresh_interaction(player, selected_cards, selected_targets)
+  if self.interaction then
+    local spec = self.interaction.spec
+    if spec and spec.type == "optionbox" and spec.direct_send then
+      if self:feasible(player, selected_targets, selected_cards) then
+        return self.interaction.spec.options
+      end
+      return {}
+    end
+  end
 end
 
 -- 使用技能时默认的烧条提示（一般会在主动使用时出现）

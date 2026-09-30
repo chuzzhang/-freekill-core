@@ -101,24 +101,25 @@ function Death:main()
   local logic = room.logic
   logic:trigger(fk.BeforeGameOverJudge, victim, deathData)
 
+  local showRole = victim.rest == 0 and not deathData.hideRole
   local killer = deathData.killer
   if killer then
     room:sendLog{
       type = "#KillPlayer",
       to = {killer.id},
       from = victim.id,
-      arg = (victim.rest > 0 and 'unknown' or victim.role),
+      arg = (showRole and victim.role or 'unknown'),
     }
   else
     room:sendLog{
       type = "#KillPlayerWithNoKiller",
       from = victim.id,
-      arg = (victim.rest > 0 and 'unknown' or victim.role),
+      arg = (showRole and victim.role or 'unknown'),
     }
   end
   room:sendLogEvent("Death", {to = victim.id})
 
-  if victim.rest == 0 then
+  if showRole then
     room:setPlayerProperty(victim, "role_shown", true)
     -- room:broadcastProperty(victim, "role")
   end

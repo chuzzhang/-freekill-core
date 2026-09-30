@@ -13,18 +13,20 @@ change_hero:addEffect("active", {
   card_filter = Util.FalseFunc,
   card_num = 0,
   target_filter = function(self, player, to_select, selected)
-    if self.interaction and self.interaction.data == "removeDeputyGeneral" then
-      if to_select.deputyGeneral == "" then
-        return false
-      end
-    end
     return #selected < 1
   end,
   target_num = 1,
-  interaction = function(self)
-    return UI.ComboBox {
-      choices = { "mainGeneral",  "deputyGeneral", "removeDeputyGeneral", "Gender", "Kingdom" },
-    }
+  interaction = UI.OptionBox {
+    options = { "mainGeneral",  "deputyGeneral", "removeDeputyGeneral", "Gender", "Kingdom" },
+    direct_send = true
+  },
+  refresh_interaction = function(self, player, selected_cards, selected_targets)
+    if #selected_targets == 0 then return {} end
+    local arr = { "mainGeneral",  "deputyGeneral", "Gender", "Kingdom" }
+    if selected_targets[1].deputyGeneral ~= "" then
+      table.insert(arr, "removeDeputyGeneral")
+    end
+    return arr
   end,
   on_use = function(self, room, effect)
     local from = effect.from
@@ -52,7 +54,16 @@ change_hero:addEffect("active", {
           table.insertIfNeed(kingdoms, g.kingdom)
         end
       end
-      room:setPlayerProperty(target, "kingdom", room:askToChoice(from, {choices = kingdoms, skill_name = "change_hero"}))
+      choice = room:askToChoice(from, {
+        choices = kingdoms,
+        skill_name = "change_hero",
+      })
+      if target.kingdom == "wild" then
+        target.role = choice
+        room:broadcastProperty(target, "role")
+      else
+        room:setPlayerProperty(target, "kingdom", choice)
+      end
     end
   end,
 })

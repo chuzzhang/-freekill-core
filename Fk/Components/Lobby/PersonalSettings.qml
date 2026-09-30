@@ -24,7 +24,6 @@ Item {
     }
     Text {
       text: {
-        Config.totalTime;
         const gamedata = Lua.getPlayerGameData(Self.id);
         const totalTime = gamedata[3];
         const h = (totalTime / 3600).toFixed(2);
@@ -65,6 +64,7 @@ Item {
     Text {
       Layout.alignment: Qt.AlignTop
       text: Self.screenName
+      visible: !Config.hideScreenName
       font.pixelSize: 22
       font.family: Config.libianName
       color: "#F0DFAF"

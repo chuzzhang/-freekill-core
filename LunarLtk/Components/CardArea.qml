@@ -23,7 +23,7 @@ Item {
 
   function remove(outputs) {
     let result = area.remove(outputs, (a, b) => {
-      if (a.cardId === b.dataModel.cardId) {
+      if (a.uniqueId === b.dataModel.uniqueId) {
         b.dataModel = a;
         return true;
       }

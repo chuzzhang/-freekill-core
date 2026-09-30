@@ -7,6 +7,7 @@ QtObject {
 
   property list<CardModel> handcards: [];
   property list<CardModel> expandedCards: [];
+  property list<int> visible_ids: [];
 
   property list<SkillModel> skills: [];
   property list<SkillModel> fakeSkills: [];
@@ -154,13 +155,18 @@ QtObject {
   function applyChange(uiUpdate) {
     uiUpdate["_delete"]?.forEach(data => {
       if (data.type !== "CardItem") return;
-      const idx = expandedCards.findIndex(e => e.cardId === data.id);
+      const idx = expandedCards.findIndex(e => e.uniqueId === data.id);
       if (idx !== -1) expandedCards.splice(idx, 1);
     });
 
     uiUpdate["_new"]?.forEach(dat => {
       if (dat.type !== "CardItem") return;
-      const card = Ltk.createCardModel(dat.data.id);
+      let card;
+      if (dat.data.card) {
+        card = Ltk.createCardModelFromLuaValue(dat.data.card);
+      } else {
+        card = Ltk.createCardModel(dat.data.id);
+      }
       card.footnote = Lua.tr(dat.ui_data.footnote);
       card.footnoteVisible = true;
       const vcard = Ltk.getVirtualEquipData(0, dat.data.id);
@@ -169,8 +175,8 @@ QtObject {
     });
 
     uiUpdate["CardItem"]?.forEach(cdata => {
-      const card = handcards.find(e => e.cardId === cdata.id) ||
-        expandedCards.find(e => e.cardId === cdata.id);
+      const card = handcards.find(e => e.uniqueId === cdata.id) ||
+        expandedCards.find(e => e.uniqueId === cdata.id);
 
       if (card) {
         card.selectable = cdata.enabled;
@@ -192,5 +198,11 @@ QtObject {
         skillBtn.selected = skdata.selected;
       }
     });
+
+    if (uiUpdate["visible_cards"]) {
+      visible_ids = uiUpdate["visible_cards"];
+    } else {
+      visible_ids = []
+    }
   }
 }
